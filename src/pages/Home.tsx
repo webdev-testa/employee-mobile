@@ -3,6 +3,7 @@ import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 import { supabase } from "@/lib/supabase";
 import { useClockIn, useClockOut } from "@/hooks/useAbsensi";
 import { toast } from "sonner";
+import { isWithinArea, getDistance } from "@/lib/geofence";
 import {
   MapPin,
   CheckCircle2,
@@ -13,6 +14,11 @@ import {
 } from "lucide-react";
 
 type FlowState = "idle" | "confirm" | "success";
+
+// TODO: Set your actual office coordinates here
+const OFFICE_LAT = -6.200000; 
+const OFFICE_LNG = 106.816666;
+const GEOFENCE_RADIUS = 100; // in meters
 
 export default function EmployeeHome() {
   const [userName, setUserName] = useState("Employee");
@@ -150,6 +156,9 @@ export default function EmployeeHome() {
     year: "numeric",
   });
 
+  const distance = coords ? getDistance(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG) : null;
+  const inArea = coords ? isWithinArea(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG, GEOFENCE_RADIUS) : false;
+
   if (flowState === "confirm") {
     return (
       <div className="min-h-screen bg-[#F0FAFF] flex flex-col font-sans">
@@ -224,14 +233,31 @@ export default function EmployeeHome() {
               <div className="text-[10px] text-[#4A7A8A] font-mono uppercase tracking-wide mb-1">
                 Status Lokasi
               </div>
-              <div className="font-medium text-[13px] text-[#3AAD7A]">
-                Dalam Area
-              </div>
+              {coords ? (
+                inArea ? (
+                  <div className="font-medium text-[13px] text-[#3AAD7A]">
+                    Dalam Area ({Math.round(distance!)}m)
+                  </div>
+                ) : (
+                  <div className="font-medium text-[13px] text-[#F87171]">
+                    Terlalu Jauh ({Math.round(distance!)}m)
+                  </div>
+                )
+              ) : (
+                <div className="font-medium text-[13px] text-[#4A7A8A]">
+                  Menghitung...
+                </div>
+              )}
             </div>
           </div>
         </div>
 
         <div className="p-6 bg-white border-t border-[#C8E8F5]">
+          {coords && !inArea && (
+            <div className="mb-4 p-3 bg-[#F87171]/10 border border-[#F87171]/30 rounded-xl text-[#F87171] text-[13px] text-center font-medium">
+              ⚠️ Peringatan: Anda berada di luar radius kantor ({Math.round(distance!)}m).
+            </div>
+          )}
           <button
             onClick={handleConfirmClockIn}
             disabled={loading}
@@ -289,8 +315,8 @@ export default function EmployeeHome() {
           </div>
           <div className="flex justify-between items-center py-2 border-b border-[#F0FAFF]">
             <span className="text-[13px] text-[#4A7A8A]">Lokasi</span>
-            <span className="font-mono text-[13.5px] font-medium text-[#3AAD7A]">
-              Dalam area ✓
+            <span className={`font-mono text-[13.5px] font-medium ${inArea ? "text-[#3AAD7A]" : "text-[#F87171]"}`}>
+              {inArea ? "Dalam area ✓" : "Luar area ⚠️"}
             </span>
           </div>
           <div className="flex justify-between items-center py-2">
