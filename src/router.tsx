@@ -7,8 +7,10 @@ import {
 import { useAuth, AuthProvider } from "@/hooks/useAuth";
 import LoginPage from "@/pages/login/loginPage";
 import EmployeeHome from "@/pages/Home";
+import EmployeeAbsensi from "@/pages/Absensi";
 import EmployeeKasbon from "@/pages/Kasbon";
 import EmployeeProfil from "@/pages/Profil";
+import EmployeeSlipGaji from "@/pages/SlipGaji";
 import { EmployeeLayout } from "@/components/layout/EmployeeLayout";
 
 // Auth
@@ -57,7 +59,19 @@ function RoleGuard({ allowedRoles }: { allowedRoles: string[] }) {
 
   if (!allowedRoles.includes(user.role)) {
     if (user.role === "admin" || user.role === "superadmin") {
-      return <Navigate to="/admin/dashboard" replace />;
+      return (
+        <div className="flex flex-col h-screen items-center justify-center font-sans text-sm bg-[#F0FAFF] text-[#1A3A4A] p-6 text-center">
+          <div className="text-[#F5A940] mb-4 text-[20px] font-bold font-['Syne']">
+            Akses Terbatas
+          </div>
+          <div className="text-[#4A7A8A] mb-6 max-w-xs leading-relaxed">
+            Akun Admin hanya dapat digunakan melalui portal web admin. Silakan gunakan akun Karyawan untuk masuk ke aplikasi ini.
+          </div>
+          <button onClick={() => logout()} className="px-6 py-3 bg-[#F5A940] hover:bg-[#e09833] text-white rounded-[14px] font-sans font-bold font-['Syne'] transition-all cursor-pointer shadow-md">
+            Log out
+          </button>
+        </div>
+      );
     } else if (user.role === "employee") {
       return <Navigate to="/employee/home" replace />;
     } else {
@@ -130,12 +144,20 @@ export const router = createBrowserRouter([
                     element: <EmployeeHome />,
                   },
                   {
+                    path: "/employee/absensi",
+                    element: <EmployeeAbsensi />,
+                  },
+                  {
                     path: "/employee/kasbon",
                     element: <EmployeeKasbon />,
                   },
                   {
                     path: "/employee/profil",
                     element: <EmployeeProfil />,
+                  },
+                  {
+                    path: "/employee/slip-gaji",
+                    element: <EmployeeSlipGaji />,
                   },
                   {
                     path: "/employee",

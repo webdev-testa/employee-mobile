@@ -26,6 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         )
         
         const fetchPromise = supabase
+          .schema('hr')
           .from('users')
           .select('*')
           .eq('id', authUserId)

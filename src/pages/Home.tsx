@@ -2,8 +2,10 @@ import { useState, useEffect, useRef } from "react";
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 import { supabase } from "@/lib/supabase";
 import { useClockIn, useClockOut } from "@/hooks/useAbsensi";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { isWithinArea, getDistance } from "@/lib/geofence";
+import { Button } from "@/components/ui/button";
 import {
   MapPin,
   CheckCircle2,
@@ -16,14 +18,22 @@ import {
 type FlowState = "idle" | "confirm" | "success";
 
 // TODO: Set your actual office coordinates here
-const OFFICE_LAT = -6.200000; 
-const OFFICE_LNG = 106.816666;
+const OFFICE_LAT = -8.00970; 
+const OFFICE_LNG = 112.61071;
 const GEOFENCE_RADIUS = 100; // in meters
 
+function formatCurrencyShort(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 1)}jt`;
+  if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
+  return n.toLocaleString('id-ID');
+}
+
 export default function EmployeeHome() {
+  const { user: authUser } = useAuth();
   const [userName, setUserName] = useState("Employee");
   const [loading, setLoading] = useState(false);
-  const [hasClockedIn, setHasClockedIn] = useState(false);
+  const [todayRecord, setTodayRecord] = useState<any>(null);
+  const [actionType, setActionType] = useState<"in" | "out">("in");
   const [currentTime, setCurrentTime] = useState(new Date());
 
   const [flowState, setFlowState] = useState<FlowState>("idle");
@@ -31,10 +41,14 @@ export default function EmployeeHome() {
   const [coords, setCoords] = useState<GeolocationCoordinates | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
+  const [usedKasbon, setUsedKasbon] = useState(0);
+  const [kasbonLimit, setKasbonLimit] = useState(1000000);
+  const [salary, setSalary] = useState(0);
+
   const mapRef = useRef<HTMLDivElement>(null);
 
   const { capturePhoto, getLocation, saveAttendance } = useClockIn();
-  const { clockOut } = useClockOut();
+  const { saveClockOut, resetAttendanceDev } = useClockOut();
 
   useEffect(() => {
     if (flowState === "confirm" && coords && mapRef.current) {
@@ -64,35 +78,58 @@ export default function EmployeeHome() {
     }
   }, [flowState, coords]);
 
+  // Load user details and Kasbon usage
+  useEffect(() => {
+    if (!authUser) return;
+
+    setUserName(authUser.name || "Employee");
+    setSalary(authUser.salary ?? 0);
+    setKasbonLimit(authUser.kasbon_limit ?? 1000000);
+
+    const fetchKasbonUsage = async () => {
+      const now = new Date();
+      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+
+      const { data, error } = await supabase
+        .schema("hr")
+        .from("kasbon")
+        .select("amount")
+        .eq("user_id", authUser.id)
+        .gte("requested_at", monthStart)
+        .neq("status", "rejected");
+
+      if (!error && data) {
+        const total = data.reduce((sum, k) => sum + Number(k.amount), 0);
+        setUsedKasbon(total);
+      }
+    };
+
+    fetchKasbonUsage();
+  }, [authUser]);
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
     const checkStatus = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        setUserName(
-          user.user_metadata?.name || user.email?.split("@")[0] || "Employee",
-        );
-        const today = new Date().toISOString().split("T")[0];
-        const { data } = await supabase
-          .from("attendance")
-          .select("id")
-          .eq("user_id", user.id)
-          .eq("date", today)
-          .maybeSingle();
+      if (!authUser) return;
+      const today = new Date().toISOString().split("T")[0];
+      const { data } = await supabase
+        .schema("hr")
+        .from("attendance")
+        .select("*")
+        .eq("user_id", authUser.id)
+        .eq("date", today)
+        .maybeSingle();
 
-        if (data) setHasClockedIn(true);
-      }
+      setTodayRecord(data || null);
     };
 
     checkStatus();
     return () => clearInterval(timer);
-  }, []);
+  }, [authUser]);
 
   const handleStartClockIn = async () => {
-    if (hasClockedIn) {
+    if (todayRecord) {
       toast.info("Already clocked in");
       return;
     }
@@ -108,6 +145,7 @@ export default function EmployeeHome() {
       setPhotoBlob(photo);
       setCoords(loc);
       setPhotoUrl(URL.createObjectURL(photo));
+      setActionType("in");
       setFlowState("confirm");
     } catch (error: any) {
       toast.error("Gagal memulai absen", { description: error.message });
@@ -116,14 +154,58 @@ export default function EmployeeHome() {
     }
   };
 
+  const handleStartClockOut = async () => {
+    if (!todayRecord || todayRecord.clock_out_time) {
+      toast.info("Absen pulang tidak tersedia");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      toast.info("Membuka kamera...");
+      const photo = await capturePhoto();
+
+      toast.info("Mengambil lokasi GPS...");
+      const loc = await getLocation();
+
+      setPhotoBlob(photo);
+      setCoords(loc);
+      setPhotoUrl(URL.createObjectURL(photo));
+      setActionType("out");
+      setFlowState("confirm");
+    } catch (error: any) {
+      toast.error("Gagal memulai absen pulang", { description: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleConfirmClockIn = async () => {
     if (!photoBlob || !coords) return;
+    const isOk = isWithinArea(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG, GEOFENCE_RADIUS);
+    if (!isOk) {
+      const dist = getDistance(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG);
+      toast.error("Gagal menyimpan absen", {
+        description: `Anda berada di luar radius kantor (${Math.round(dist)}m). Batas maksimum adalah ${GEOFENCE_RADIUS}m.`
+      });
+      return;
+    }
     try {
       setLoading(true);
       await saveAttendance(photoBlob, coords);
-      setHasClockedIn(true);
+      
+      const today = new Date().toISOString().split("T")[0];
+      const { data } = await supabase
+        .schema("hr")
+        .from("attendance")
+        .select("*")
+        .eq("user_id", authUser!.id)
+        .eq("date", today)
+        .maybeSingle();
+      setTodayRecord(data || null);
+      
       setFlowState("success");
-      toast.success("Absen Berhasil!");
+      toast.success("Absen Masuk Berhasil!");
     } catch (error: any) {
       toast.error("Gagal menyimpan absen", { description: error.message });
     } finally {
@@ -131,11 +213,44 @@ export default function EmployeeHome() {
     }
   };
 
-  const handleClockOut = async () => {
+  const handleConfirmClockOut = async () => {
+    if (!photoBlob || !coords) return;
+    const isOk = isWithinArea(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG, GEOFENCE_RADIUS);
+    if (!isOk) {
+      const dist = getDistance(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG);
+      toast.error("Gagal menyimpan absen", {
+        description: `Anda berada di luar radius kantor (${Math.round(dist)}m). Batas maksimum adalah ${GEOFENCE_RADIUS}m.`
+      });
+      return;
+    }
     try {
       setLoading(true);
-      await clockOut();
-      setHasClockedIn(false);
+      await saveClockOut(photoBlob, coords);
+      
+      const today = new Date().toISOString().split("T")[0];
+      const { data } = await supabase
+        .schema("hr")
+        .from("attendance")
+        .select("*")
+        .eq("user_id", authUser!.id)
+        .eq("date", today)
+        .maybeSingle();
+      setTodayRecord(data || null);
+      
+      setFlowState("success");
+      toast.success("Absen Pulang Berhasil!");
+    } catch (error: any) {
+      toast.error("Gagal menyimpan absen pulang", { description: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDevReset = async () => {
+    try {
+      setLoading(true);
+      await resetAttendanceDev();
+      setTodayRecord(null);
       setFlowState("idle");
       toast.success("Reset absen berhasil");
     } catch (error: any) {
@@ -163,12 +278,13 @@ export default function EmployeeHome() {
     return (
       <div className="min-h-screen bg-[#F0FAFF] flex flex-col font-sans">
         <div className="p-6 flex items-center gap-4 bg-white border-b border-[#C8E8F5] shadow-sm">
-          <button
+          <Button
             onClick={() => setFlowState("idle")}
-            className="w-10 h-10 rounded-xl bg-[#F0FAFF] border border-[#C8E8F5] flex items-center justify-center text-[#4A7A8A]"
+            variant="secondary"
+            size="icon"
           >
             <ChevronRight className="rotate-180" size={20} />
-          </button>
+          </Button>
           <h1 className="font-['Syne'] text-[20px] font-bold text-[#1A3A4A]">
             Konfirmasi Absen
           </h1>
@@ -223,7 +339,7 @@ export default function EmployeeHome() {
           <div className="mt-4 flex gap-3">
             <div className="flex-1 bg-white border border-[#C8E8F5] rounded-[14px] p-3 shadow-sm">
               <div className="text-[10px] text-[#4A7A8A] font-mono uppercase tracking-wide mb-1">
-                Jam Masuk
+                {actionType === "in" ? "Jam Masuk" : "Jam Keluar"}
               </div>
               <div className="font-mono text-[16px] font-medium text-[#F5A940]">
                 {timeString}
@@ -255,26 +371,29 @@ export default function EmployeeHome() {
         <div className="p-6 bg-white border-t border-[#C8E8F5]">
           {coords && !inArea && (
             <div className="mb-4 p-3 bg-[#F87171]/10 border border-[#F87171]/30 rounded-xl text-[#F87171] text-[13px] text-center font-medium">
-              ⚠️ Peringatan: Anda berada di luar radius kantor ({Math.round(distance!)}m).
+              ⚠️ Tidak Dapat Absen: Anda berada di luar radius kantor ({Math.round(distance!)}m). Silakan mendekat ke lokasi kantor.
             </div>
           )}
-          <button
-            onClick={handleConfirmClockIn}
-            disabled={loading}
-            className="w-full py-4 rounded-[16px] bg-[#3AAD7A] text-white font-['Syne'] text-[17px] font-bold shadow-md hover:bg-[#2b8a60] transition-all flex justify-center items-center gap-2"
+          <Button
+            onClick={actionType === "in" ? handleConfirmClockIn : handleConfirmClockOut}
+            disabled={loading || !inArea}
+            variant={inArea ? "green" : "outline"}
+            size="xl"
+            className={!inArea ? "bg-neutral-300 text-neutral-500 cursor-not-allowed border border-neutral-300 shadow-none w-full" : "w-full"}
           >
             {loading ? (
               <RefreshCw className="animate-spin" size={20} />
             ) : (
-              "Konfirmasi Absen Masuk"
+              actionType === "in" ? "Konfirmasi Absen Masuk" : "Konfirmasi Absen Pulang"
             )}
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => setFlowState("idle")}
-            className="w-full mt-3 py-3 rounded-[14px] border border-[#C8E8F5] text-[#4A7A8A] font-medium text-[14px] hover:bg-[#F0FAFF] transition-all"
+            variant="outline"
+            className="w-full mt-3 font-medium text-[14px]"
           >
             Foto Ulang
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -292,12 +411,12 @@ export default function EmployeeHome() {
         </div>
 
         <h2 className="font-['Syne'] text-[28px] font-bold text-[#1A3A4A] mb-2">
-          Absen berhasil!
+          {actionType === "in" ? "Absen masuk berhasil!" : "Absen pulang berhasil!"}
         </h2>
         <p className="text-[14px] text-[#4A7A8A] leading-relaxed mb-8">
           Kehadiran kamu sudah tercatat.
           <br />
-          Selamat bekerja, {userName} 👋
+          {actionType === "in" ? `Selamat bekerja, ${userName} 👋` : `Selamat istirahat, ${userName} 👋`}
         </p>
 
         <div className="w-full bg-white border border-[#C8E8F5] rounded-[20px] p-5 mb-8 shadow-sm text-left">
@@ -308,8 +427,10 @@ export default function EmployeeHome() {
             </span>
           </div>
           <div className="flex justify-between items-center py-2 border-b border-[#F0FAFF]">
-            <span className="text-[13px] text-[#4A7A8A]">Jam masuk</span>
-            <span className="font-mono text-[13.5px] font-medium text-[#3AAD7A]">
+            <span className="text-[13px] text-[#4A7A8A]">
+              {actionType === "in" ? "Jam masuk" : "Jam pulang"}
+            </span>
+            <span className={`font-mono text-[13.5px] font-medium ${actionType === "in" ? "text-[#3AAD7A]" : "text-[#C84B2F]"}`}>
               {timeString}
             </span>
           </div>
@@ -327,12 +448,14 @@ export default function EmployeeHome() {
           </div>
         </div>
 
-        <button
+        <Button
           onClick={() => setFlowState("idle")}
-          className="w-full py-4 rounded-[16px] border border-[#C8E8F5] bg-white text-[#1A3A4A] font-['Syne'] text-[17px] font-bold hover:bg-[#F0FAFF] transition-all shadow-sm"
+          variant="outline"
+          size="xl"
+          className="w-full bg-white text-[#1A3A4A] hover:bg-[#F0FAFF]"
         >
           Kembali ke Home
-        </button>
+        </Button>
       </div>
     );
   }
@@ -349,10 +472,14 @@ export default function EmployeeHome() {
             {userName}
           </h1>
         </div>
-        <button className="w-[42px] h-[42px] rounded-full bg-white hover:bg-[#F0FAFF] text-[#4A7A8A] hover:text-[#F5A940] transition-all border border-[#C8E8F5] flex items-center justify-center relative shadow-sm">
+        <Button
+          variant="outline"
+          size="icon-lg"
+          className="bg-white hover:bg-[#F0FAFF] text-[#4A7A8A] hover:text-[#F5A940] relative"
+        >
           <Bell size={18} />
           <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-[#F87171] rounded-full border border-white"></span>
-        </button>
+        </Button>
       </header>
 
       {/* Main Content */}
@@ -361,7 +488,7 @@ export default function EmployeeHome() {
           <div className="bg-white border border-[#C8E8F5] rounded-full px-3.5 py-1.5 text-[12.5px] text-[#4A7A8A] font-mono shadow-sm">
             {dateStringFull}
           </div>
-          {!hasClockedIn && (
+          {!todayRecord && (
             <div className="flex items-center gap-1.5 bg-[#E2F0E8] border border-[#3AAD7A]/30 rounded-full px-3 py-1.5 text-[11.5px] text-[#3AAD7A] font-medium shadow-sm">
               <div className="w-1.5 h-1.5 rounded-full bg-[#3AAD7A] animate-ping"></div>
               Absensi terbuka
@@ -385,9 +512,19 @@ export default function EmployeeHome() {
                 Status hari ini
               </div>
               <div
-                className={`font-mono text-[14px] font-medium ${hasClockedIn ? "text-[#3AAD7A]" : "text-[#F5A940]"}`}
+                className={`font-mono text-[14px] font-medium ${
+                  !todayRecord 
+                    ? "text-[#F5A940]" 
+                    : todayRecord.clock_out_time 
+                      ? "text-neutral-400" 
+                      : "text-[#3AAD7A]"
+                }`}
               >
-                {hasClockedIn ? "Sudah Absen" : "Belum Absen"}
+                {!todayRecord 
+                  ? "Belum Absen" 
+                  : todayRecord.clock_out_time 
+                    ? "Selesai Kerja" 
+                    : "Sudah Masuk"}
               </div>
             </div>
             <div className="flex-1 bg-[#F0FAFF] border border-[#C8E8F5] rounded-[14px] p-3">
@@ -400,21 +537,40 @@ export default function EmployeeHome() {
             </div>
           </div>
 
-          <button
-            onClick={hasClockedIn ? undefined : handleStartClockIn}
-            disabled={loading || hasClockedIn}
-            className={`w-full py-4 rounded-[16px] font-['Syne'] text-[17px] font-bold transition-all flex items-center justify-center gap-3 relative overflow-hidden ${
-              hasClockedIn
-                ? "bg-[#E2F0E8] text-[#3AAD7A] cursor-not-allowed border border-[#3AAD7A]/20"
-                : "bg-[#F5A940] hover:bg-[#e09833] text-white shadow-[#F5A940]/20 shadow-lg border-none"
+          <Button
+            onClick={
+              !todayRecord 
+                ? handleStartClockIn 
+                : todayRecord.clock_out_time 
+                  ? undefined 
+                  : handleStartClockOut
+            }
+            disabled={loading || !!(todayRecord && todayRecord.clock_out_time)}
+            variant={
+              todayRecord && todayRecord.clock_out_time
+                ? "outline"
+                : todayRecord
+                  ? "red"
+                  : "orange"
+            }
+            size="xl"
+            className={`w-full flex items-center justify-center gap-3 relative overflow-hidden ${
+              todayRecord && todayRecord.clock_out_time
+                ? "bg-neutral-100 text-neutral-400 border border-neutral-200 cursor-not-allowed shadow-none"
+                : ""
             }`}
           >
             {loading ? (
               <RefreshCw size={20} className="animate-spin text-white" />
-            ) : hasClockedIn ? (
+            ) : todayRecord && todayRecord.clock_out_time ? (
               <>
                 <CheckCircle2 size={20} />
-                Sudah Absen
+                Absensi Selesai
+              </>
+            ) : todayRecord ? (
+              <>
+                <Camera size={20} className="relative z-10" />
+                <span className="relative z-10">Absen Pulang</span>
               </>
             ) : (
               <>
@@ -423,7 +579,7 @@ export default function EmployeeHome() {
                 <span className="relative z-10">Absen Masuk</span>
               </>
             )}
-          </button>
+          </Button>
         </div>
 
         {/* Mini Stats */}
@@ -433,13 +589,13 @@ export default function EmployeeHome() {
               Kasbon
             </div>
             <div className="font-['Syne'] text-[20px] font-bold text-[#1A3A4A] leading-none mb-1">
-              Rp 0
+              Rp {usedKasbon.toLocaleString("id-ID")}
             </div>
-            <div className="text-[11px] text-[#4A7A8A]">dari limit Rp 1jt</div>
+            <div className="text-[11px] text-[#4A7A8A]">dari limit Rp {formatCurrencyShort(kasbonLimit)}</div>
             <div className="h-[4px] bg-[#F0FAFF] rounded-full mt-3 overflow-hidden">
               <div
-                className="h-full bg-[#F5A940]"
-                style={{ width: "0%" }}
+                className="h-full bg-[#F5A940] transition-all duration-500"
+                style={{ width: `${kasbonLimit > 0 ? Math.min((usedKasbon / kasbonLimit) * 100, 100) : 0}%` }}
               ></div>
             </div>
           </div>
@@ -448,26 +604,27 @@ export default function EmployeeHome() {
               Estimasi Gaji
             </div>
             <div className="font-['Syne'] text-[20px] font-bold text-[#1A3A4A] leading-none mb-1">
-              Rp 4.2jt
+              Rp {Math.max(0, salary - usedKasbon).toLocaleString("id-ID")}
             </div>
             <div className="text-[11px] text-[#4A7A8A]">bersih bulan ini</div>
             <div className="h-[4px] bg-[#F0FAFF] rounded-full mt-3 overflow-hidden">
               <div
-                className="h-full bg-[#3AAD7A]"
-                style={{ width: "100%" }}
+                className="h-full bg-[#3AAD7A] transition-all duration-500"
+                style={{ width: `${salary > 0 ? Math.max(0, Math.min(((salary - usedKasbon) / salary) * 100, 100)) : 100}%` }}
               ></div>
             </div>
           </div>
         </div>
 
         {/* Dev Action */}
-        {hasClockedIn && (
-          <button
-            onClick={handleClockOut}
-            className="w-full py-3 mb-5 rounded-xl border border-[#F87171]/30 text-[#F87171] text-sm bg-white hover:bg-[#F87171]/5 flex items-center justify-center gap-2"
+        {todayRecord && (
+          <Button
+            onClick={handleDevReset}
+            variant="destructive"
+            className="w-full py-3 mb-5 rounded-xl text-sm flex items-center justify-center gap-2"
           >
             <RefreshCw size={16} /> Reset Absen (Dev)
-          </button>
+          </Button>
         )}
       </div>
     </div>

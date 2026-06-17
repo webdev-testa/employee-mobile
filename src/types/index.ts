@@ -6,6 +6,8 @@ export type AttendanceStatus = 'ontime' | 'late' | 'absent'
 
 export type KasbonStatus = 'pending' | 'approved' | 'deducted'
 
+export type PayrollStatus = 'pending' | 'paid'
+
 export type UserStatus = 'active' | 'inactive'
 
 type HrSchema = Database['hr']['Tables']
@@ -23,7 +25,11 @@ export type Kasbon = Omit<HrSchema['kasbon']['Row'], 'status'> & {
   status: KasbonStatus
 }
 
-export interface Employee extends Omit<User, 'status' | 'role'> {
+export type Payroll = Omit<HrSchema['payroll']['Row'], 'status'> & {
+  status: PayrollStatus
+}
+
+export interface Employee extends Omit<User, 'status' | 'role' | 'salary' | 'dept' | 'kasbon_limit'> {
   email: string
   jabatan: string
   role: 'admin' | 'employee'
@@ -32,6 +38,9 @@ export interface Employee extends Omit<User, 'status' | 'role'> {
   address: string
   joined: string
   status: UserStatus
+  salary: number
+  dept: string
+  kasbon_limit: number
   absen?: number
   kasbon_used?: number
   last_slip?: string

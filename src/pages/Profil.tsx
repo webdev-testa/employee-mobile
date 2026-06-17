@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { LogOut, User, Settings, HelpCircle, ChevronRight } from "lucide-react";
+import { LogOut, User, Settings, HelpCircle, ChevronRight, FileText } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function EmployeeProfil() {
   const [userName, setUserName] = useState("Employee");
@@ -45,6 +46,16 @@ export default function EmployeeProfil() {
 
       {/* Menus */}
       <div className="mx-5 bg-white border border-[#C8E8F5] rounded-[20px] shadow-sm overflow-hidden mb-6">
+        <div 
+          onClick={() => navigate("/employee/slip-gaji")}
+          className="p-4 flex items-center gap-3 border-b border-[#F0FAFF] cursor-pointer hover:bg-[#F0FAFF] transition-colors"
+        >
+          <div className="w-10 h-10 rounded-xl bg-[#F0FAFF] border border-[#C8E8F5] flex items-center justify-center shrink-0 text-[#4A7A8A]">
+            <FileText size={18} />
+          </div>
+          <div className="flex-1 font-medium text-[15px] text-[#1A3A4A]">Slip Gaji</div>
+          <ChevronRight size={18} className="text-[#8ABAC8]" />
+        </div>
         <div className="p-4 flex items-center gap-3 border-b border-[#F0FAFF] cursor-pointer hover:bg-[#F0FAFF] transition-colors">
           <div className="w-10 h-10 rounded-xl bg-[#F0FAFF] border border-[#C8E8F5] flex items-center justify-center shrink-0 text-[#4A7A8A]">
             <Settings size={18} />
@@ -63,13 +74,15 @@ export default function EmployeeProfil() {
 
       {/* Logout */}
       <div className="px-5">
-        <button
+        <Button
           onClick={handleLogout}
-          className="w-full p-4 rounded-[18px] bg-white border border-[#F87171]/30 text-[#F87171] font-['Syne'] text-[16px] font-bold flex items-center justify-center gap-2 hover:bg-[#F87171]/5 transition-all shadow-sm cursor-pointer"
+          variant="destructive"
+          size="xl"
+          className="w-full bg-white text-[#F87171] cursor-pointer"
         >
           <LogOut size={18} />
           Keluar (Log Out)
-        </button>
+        </Button>
       </div>
     </div>
   );

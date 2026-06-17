@@ -52,6 +52,7 @@ export function useClockIn() {
 
     // Save to attendance
     const { error } = await supabase
+      .schema('hr')
       .from('attendance')
       .insert({
         user_id: user.id,
@@ -78,12 +79,50 @@ export function useClockIn() {
 }
 
 export function useClockOut() {
-  const clockOut = async () => {
+  const saveClockOut = async (photo: Blob, coords: GeolocationCoordinates) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error('Not logged in')
+
+    // Upload photo to storage
+    const filename = `${user.id}/${Date.now()}_out.jpg`
+    const { error: uploadError } = await supabase
+      .storage
+      .from('attendance-photos')
+      .upload(filename, photo)
+    
+    if (uploadError) throw uploadError
+
+    // Get photo URL
+    const { data: { publicUrl } } = supabase
+      .storage
+      .from('attendance-photos')
+      .getPublicUrl(filename)
+
+    const today = new Date().toISOString().split('T')[0]
+
+    // Update attendance record for today
+    const { error } = await supabase
+      .schema('hr')
+      .from('attendance')
+      .update({
+        clock_out_time: new Date().toISOString(),
+        clock_out_lat: coords.latitude,
+        clock_out_lng: coords.longitude,
+        clock_out_photo_url: publicUrl
+      })
+      .eq('user_id', user.id)
+      .eq('date', today)
+
+    if (error) throw error
+  }
+
+  const resetAttendanceDev = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Not logged in')
 
     const today = new Date().toISOString().split('T')[0]
     const { error } = await supabase
+      .schema('hr')
       .from('attendance')
       .delete()
       .eq('user_id', user.id)
@@ -92,5 +131,5 @@ export function useClockOut() {
     if (error) throw error
   }
 
-  return { clockOut }
+  return { saveClockOut, resetAttendanceDev }
 }
