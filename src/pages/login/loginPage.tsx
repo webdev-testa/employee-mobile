@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -41,8 +42,9 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     try {
+      console.log('LoginPage: 1. Initiating login with email:', email)
       const { error: loginError, data } = await login(email, password)
-      console.log('Login result:', { error: loginError, data })
+      console.log('LoginPage: 2. Login result:', { error: loginError, userId: data?.user?.id })
 
       if (loginError) {
         setError(loginError.message)
@@ -52,12 +54,15 @@ export default function LoginPage() {
 
       // Check if the user has a profile in our public.users table
       if (data?.user) {
+        console.log('LoginPage: 3. Querying profile for user ID:', data.user.id)
         const { data: profile, error: profileError } = await supabase
           .schema('hr')
           .from('users')
           .select('role')
           .eq('id', data.user.id)
           .single()
+        
+        console.log('LoginPage: 4. Profile query result:', { profile, profileError })
 
         if (!profile || profileError) {
           setError('Your account is missing a profile or role. Please contact the administrator.')
@@ -65,8 +70,10 @@ export default function LoginPage() {
           setLoading(false)
           return
         }
+        console.log('LoginPage: 5. Profile verification successful')
       }
     } catch (err: any) {
+      console.error('LoginPage: 6. Exception occurred:', err)
       setError(err.message || 'An unexpected error occurred')
       setLoading(false)
     }
@@ -87,26 +94,26 @@ export default function LoginPage() {
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-1.5">
             <label className="text-[12px] text-[#4A7A8A] font-medium">Email address</label>
-            <input 
+            <Input 
               type="email" 
               placeholder="nama@drmeow.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
-              className="w-full h-10 px-3.5 rounded-[10px] border border-[#C8E8F5] text-[13.5px] text-[#1A3A4A] placeholder:text-[#8ABAC8] focus:outline-none focus:border-[#1A3A4A] transition-colors"
+              className="h-10 rounded-[10px] text-[13.5px] border-[#C8E8F5]"
             />
           </div>
 
           <div className="space-y-1.5">
             <label className="text-[12px] text-[#4A7A8A] font-medium">Password</label>
             <div className="relative">
-              <input 
+              <Input 
                 type={showPassword ? "text" : "password"} 
                 placeholder="Enter your password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
-                className="w-full h-10 pl-3.5 pr-10 rounded-[10px] border border-[#C8E8F5] text-[13.5px] text-[#1A3A4A] placeholder:text-[#8ABAC8] focus:outline-none focus:border-[#1A3A4A] transition-colors"
+                className="h-10 pl-3.5 pr-10 rounded-[10px] text-[13.5px] border-[#C8E8F5]"
               />
               <Button 
                 type="button"

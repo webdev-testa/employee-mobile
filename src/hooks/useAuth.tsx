@@ -21,41 +21,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const fetchProfile = async (authUserId: string) => {
       try {
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Profile fetch timeout')), 10000)
-        )
-        
-        const fetchPromise = supabase
+        console.log('[useAuth] 1. Initiating profile fetch for:', authUserId)
+        const { data, error } = await supabase
           .schema('hr')
           .from('users')
           .select('*')
           .eq('id', authUserId)
           .single()
-
-        const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any
+        
+        console.log('[useAuth] 2. Profile fetch result:', { data, error })
         
         if (error) {
-           console.error('Fetch profile query error:', error)
+          console.error('[useAuth] 3. Fetch profile query error:', error)
+          throw error
         }
         
         if (data) {
           localStorage.setItem(`profile_${authUserId}`, JSON.stringify(data))
           if (mounted) setUser(data)
           return data
-        } else {
-          // If fetch fails but we have a cached profile, use it
-          const cached = localStorage.getItem(`profile_${authUserId}`)
-          if (cached) {
-            const parsed = JSON.parse(cached)
-            if (mounted) setUser(parsed)
-            return parsed
-          }
-          if (mounted) setUser(prev => prev ? prev : null)
-          return null
         }
+        return null
       } catch (err) {
-        console.error('Fetch profile exception:', err)
+        console.error('[useAuth] 4. Fetch profile exception:', err)
         const cached = localStorage.getItem(`profile_${authUserId}`)
+        console.log('[useAuth] 5. Fallback to cache:', cached)
         if (cached) {
           const parsed = JSON.parse(cached)
           if (mounted) setUser(parsed)
@@ -89,16 +79,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     init()
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (event === 'INITIAL_SESSION') return
-        try {
-          if (session?.user) {
-            await fetchProfile(session.user.id)
-          } else {
-            if (mounted) setUser(null)
-          }
-        } catch (err) {
-          console.error('onAuthStateChange exception:', err)
+        if (session?.user) {
+          // Trigger profile fetch in background (non-blocking) to avoid auth deadlock
+          fetchProfile(session.user.id).catch((err) => {
+            console.error('onAuthStateChange profile fetch failed:', err)
+          })
+        } else {
           if (mounted) setUser(null)
         }
       }

@@ -7,8 +7,11 @@ import {
   MapPin,
   AlertTriangle,
   Send,
+  Paperclip,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { AttendanceStatusBadge } from "@/components/ui/status-badge";
 import { toast } from "sonner";
 import { getDistance } from "@/lib/geofence";
 
@@ -41,11 +44,13 @@ export default function EmployeeAbsensi() {
   const [loading, setLoading] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
 
-  // Time off form states
   const [cutiType, setCutiType] = useState<"cuti" | "izin" | "sakit">("cuti");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [reason, setReason] = useState<string>("");
+  const [holidaysList, setHolidaysList] = useState<string[]>([]);
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -69,6 +74,20 @@ export default function EmployeeAbsensi() {
         .lte("date", lastDayOfMonth);
 
       if (error) throw error;
+
+      // Fetch holidays for the month
+      const { data: holidaysData, error: holidaysError } = await supabase
+        .schema("hr")
+        .from("holidays")
+        .select("date")
+        .gte("date", firstDayOfMonth)
+        .lte("date", lastDayOfMonth);
+
+      if (holidaysError) {
+        console.error("Fetch holidays error:", holidaysError);
+      } else if (holidaysData) {
+        setHolidaysList(holidaysData.map((h: any) => h.date));
+      }
 
       const map: Record<string, AttendanceRecord> = {};
       const sorted = [...(data || [])].sort((a, b) => b.date.localeCompare(a.date));
@@ -128,6 +147,7 @@ export default function EmployeeAbsensi() {
     const record = attendanceMap[dateStr];
     const todayStr = new Date().toISOString().split("T")[0];
     const isFuture = dateStr > todayStr;
+    const isHoliday = holidaysList.includes(dateStr);
 
     if (isFuture) {
       return "text-neutral-300 cursor-default";
@@ -138,8 +158,13 @@ export default function EmployeeAbsensi() {
       if (status === "ontime") return "bg-[#E2F0E8] border border-[#3AAD7A]/30 text-[#3AAD7A]";
       if (status === "late") return "bg-[#FAF0E1] border border-[#E89E3A]/30 text-[#E89E3A]";
       if (status.includes("pending")) return "bg-sky-50 border border-sky-300/40 text-sky-500 animate-pulse";
+      if (status.includes("rejected")) return "bg-red-50 border border-red-200 text-red-400 line-through";
       if (["cuti", "izin", "sakit"].includes(status)) return "bg-[#F0FAFF] border border-[#C8E8F5] text-[#4A7A8A]";
       if (status === "absent") return "bg-[#F87171]/10 border border-[#F87171]/30 text-[#F87171]";
+    }
+
+    if (isHoliday) {
+      return "bg-neutral-100 border border-neutral-200 text-neutral-400";
     }
 
     if (dateStr === todayStr) {
@@ -168,8 +193,9 @@ export default function EmployeeAbsensi() {
       const isPast = cell.dateStr < todayStr;
       const date = new Date(cell.dateStr);
       const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+      const isHoliday = holidaysList.includes(cell.dateStr);
 
-      if (isPast && !isWeekend && !attendanceMap[cell.dateStr]) {
+      if (isPast && !isWeekend && !isHoliday && !attendanceMap[cell.dateStr]) {
         countAbsent++;
       }
     }
@@ -224,6 +250,25 @@ export default function EmployeeAbsensi() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Anda belum login");
 
+      let uploadedUrl: string | null = null;
+      if (attachment) {
+        setUploadingAttachment(true);
+        const filename = `${user.id}/leave_${Date.now()}_${attachment.name}`;
+        const { error: uploadError } = await supabase
+          .storage
+          .from('attendance-photos')
+          .upload(filename, attachment);
+        
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase
+          .storage
+          .from('attendance-photos')
+          .getPublicUrl(filename);
+        uploadedUrl = publicUrl;
+        setUploadingAttachment(false);
+      }
+
       // Generate all dates in range
       const start = new Date(startDate);
       const end = new Date(endDate);
@@ -238,6 +283,7 @@ export default function EmployeeAbsensi() {
             date: dateStr,
             status: `${cutiType}_pending`, // e.g. cuti_pending, izin_pending, sakit_pending
             is_flagged: true, // Marked pending review
+            clock_in_photo_url: uploadedUrl, // Save attachment URL here
           });
         }
       }
@@ -268,11 +314,13 @@ export default function EmployeeAbsensi() {
       if (error) throw error;
 
       setFlowState("success");
+      setAttachment(null);
       await fetchAttendance();
     } catch (e: any) {
       toast.error("Gagal mengirim pengajuan cuti", { description: e.message });
     } finally {
       setLoading(false);
+      setUploadingAttachment(false);
     }
   };
 
@@ -309,29 +357,6 @@ export default function EmployeeAbsensi() {
     }
   };
 
-  const getStatusBadgeClass = (status: string) => {
-    switch (status) {
-      case "ontime":
-        return "bg-[#E2F0E8] text-[#3AAD7A]";
-      case "late":
-        return "bg-[#FAF0E1] text-[#E89E3A]";
-      case "absent":
-        return "bg-[#F87171]/10 text-[#F87171]";
-      case "weekend":
-        return "bg-neutral-100 text-neutral-400";
-      case "cuti":
-      case "izin":
-      case "sakit":
-        return "bg-[#F0FAFF] text-[#4A7A8A] border border-[#C8E8F5]";
-      case "cuti_rejected":
-      case "izin_rejected":
-      case "sakit_rejected":
-        return "bg-[#F87171]/10 text-[#F87171] border border-[#F87171]/20";
-      default:
-        return "bg-sky-50 text-sky-500 border border-sky-300/30";
-    }
-  };
-
   // Format Helper
   const formatDateFull = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -360,18 +385,8 @@ export default function EmployeeAbsensi() {
     return (
       <div className="flex flex-col min-h-screen bg-[#F0FAFF] font-sans">
         {/* Header */}
-        <div className="p-6 pb-5 flex items-center gap-3.5 bg-white border-b border-[#C8E8F5] shadow-sm">
-          <Button
-            onClick={() => setFlowState("list")}
-            variant="outline"
-            size="icon"
-            className="cursor-pointer"
-          >
-            <ChevronLeft size={20} />
-          </Button>
-          <div className="font-['Syne'] text-[20px] font-bold text-[#1A3A4A] tracking-[-0.3px]">
-            Ajukan Cuti / Izin
-          </div>
+        <div className="bg-white border-b border-[#C8E8F5] shadow-sm">
+          <PageHeader title="Ajukan Cuti / Izin" onBack={() => setFlowState("list")} />
         </div>
 
         {/* Body */}
@@ -442,6 +457,46 @@ export default function EmployeeAbsensi() {
                 rows={4}
                 className="w-full bg-transparent border-none outline-none font-sans text-[14px] text-[#1A3A4A] placeholder:text-[#8ABAC8] resize-none"
               />
+            </div>
+
+            {/* Lampiran / Attachment */}
+            <div className="bg-white border border-[#C8E8F5] rounded-[18px] p-4 shadow-sm">
+              <label className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono mb-2 block">
+                Lampiran / Dokumen Pendukung (Opsional)
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  id="leave-attachment"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) setAttachment(file);
+                  }}
+                  disabled={loading || uploadingAttachment}
+                />
+                <label
+                  htmlFor="leave-attachment"
+                  className="px-4 py-2 border border-[#C8E8F5] rounded-[10px] text-[12.5px] font-medium text-[#4A7A8A] hover:bg-[#F0FAFF] cursor-pointer flex items-center gap-1.5 shadow-sm"
+                >
+                  <Paperclip size={14} />
+                  Pilih Berkas
+                </label>
+                <span className="text-[12px] text-[#8ABAC8] truncate max-w-[200px]">
+                  {attachment ? attachment.name : "Belum ada berkas dipilih"}
+                </span>
+                {attachment && (
+                  <button
+                    type="button"
+                    onClick={() => setAttachment(null)}
+                    className="text-[11px] text-[#F87171] hover:underline ml-auto"
+                    disabled={loading || uploadingAttachment}
+                  >
+                    Hapus
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-3 items-start bg-amber-50 border border-[#FAF0E1] rounded-[16px] p-3.5">
@@ -522,24 +577,10 @@ export default function EmployeeAbsensi() {
     return (
       <div className="flex flex-col min-h-screen bg-[#F0FAFF] font-sans">
         {/* Header */}
-        <div className="p-6 pb-5 flex items-center gap-3.5 bg-white border-b border-[#C8E8F5] shadow-sm">
-          <Button
-            onClick={() => setFlowState("list")}
-            variant="outline"
-            size="icon"
-            className="cursor-pointer"
-          >
-            <ChevronLeft size={20} />
-          </Button>
-          <div className="detail-title-block flex-1 min-w-0">
-            <div className="font-['Syne'] text-[18px] font-bold text-[#1A3A4A] truncate">
-              {formatDateFull(selectedRecord.date)}
-            </div>
-            <div className="text-[12.5px] text-[#4A7A8A] mt-0.5">Detail absensi harian</div>
-          </div>
-          <span className={`inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold font-['Syne'] ${getStatusBadgeClass(selectedRecord.status)}`}>
-            {getStatusLabel(selectedRecord.status)}
-          </span>
+        <div className="p-0 bg-white border-b border-[#C8E8F5] shadow-sm flex items-center pr-6">
+          <PageHeader title={formatDateFull(selectedRecord.date)} onBack={() => setFlowState("list")} />
+          <div className="flex-1" />
+          <AttendanceStatusBadge status={selectedRecord.status} />
         </div>
 
         {/* Detail Body */}
@@ -579,7 +620,7 @@ export default function EmployeeAbsensi() {
           )}
 
           {/* Photo Row */}
-          {isClockedIn && (
+          {isClockedIn ? (
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-white border border-[#C8E8F5] rounded-[18px] overflow-hidden shadow-sm">
                 <div className="p-2 border-b border-[#F0FAFF] font-mono text-[9px] text-[#8ABAC8] tracking-[0.5px] uppercase">
@@ -618,7 +659,33 @@ export default function EmployeeAbsensi() {
                 </div>
               </div>
             </div>
-          )}
+          ) : selectedRecord.clock_in_photo_url ? (
+            <div className="bg-white border border-[#C8E8F5] rounded-[18px] overflow-hidden shadow-sm">
+              <div className="p-2 border-b border-[#F0FAFF] font-mono text-[9px] text-[#8ABAC8] tracking-[0.5px] uppercase">
+                Dokumen Lampiran
+              </div>
+              <div className="p-4 flex flex-col gap-2">
+                <a
+                  href={selectedRecord.clock_in_photo_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#F5A940] hover:underline"
+                >
+                  <Paperclip size={14} />
+                  Buka Berkas Lampiran
+                </a>
+                {selectedRecord.clock_in_photo_url.match(/\.(jpeg|jpg|gif|png)$/i) && (
+                  <div className="h-[150px] bg-neutral-100 rounded-lg overflow-hidden border border-[#C8E8F5] relative mt-1">
+                    <img
+                      src={selectedRecord.clock_in_photo_url}
+                      alt="Attachment Preview"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
 
           {/* Info grid */}
           <div className="grid grid-cols-2 gap-3">

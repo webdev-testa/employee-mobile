@@ -1,9 +1,17 @@
 import { useState, useRef } from "react";
-import { ChevronLeft, Info, AlertTriangle, Send, Check, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import { Info, AlertTriangle, Send, Check, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useKasbon } from "@/hooks/useKasbon";
 import type { Kasbon as KasbonType } from "@/types";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { LoadingScreen } from "@/components/ui/LoadingScreen";
+import { KasbonStatusBadge } from "@/components/ui/status-badge";
 
 type FlowState = 'idle' | 'form' | 'submitting' | 'success' | 'error';
 
@@ -43,40 +51,7 @@ function getNextMonthReset(): string {
   return `Reset ${next.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  switch (status) {
-    case 'pending':
-      return (
-        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium bg-[#F5A940]/10 text-[#F5A940]">
-          ⏳ Menunggu
-        </div>
-      );
-    case 'approved':
-      return (
-        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium bg-[#3AAD7A]/10 text-[#3AAD7A]">
-          ✓ Disetujui
-        </div>
-      );
-    case 'deducted':
-      return (
-        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium bg-[#F0FAFF] border border-[#C8E8F5] text-[#8ABAC8]">
-          Dipotong
-        </div>
-      );
-    case 'rejected':
-      return (
-        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium bg-[#F87171]/10 text-[#F87171]">
-          ✗ Ditolak
-        </div>
-      );
-    default:
-      return (
-        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium bg-[#F0FAFF] border border-[#C8E8F5] text-[#8ABAC8]">
-          {status}
-        </div>
-      );
-  }
-}
+// StatusBadge deleted since we use KasbonStatusBadge from status-badge.tsx
 
 function StatusIcon({ status }: { status: string }) {
   switch (status) {
@@ -119,7 +94,19 @@ export default function Kasbon() {
     refreshing,
     refresh,
     submitKasbon,
+    cancelKasbon,
   } = useKasbon(user?.id);
+
+  const handleCancel = async (id: string) => {
+    if (window.confirm("Apakah Anda yakin ingin membatalkan pengajuan kasbon ini?")) {
+      const result = await cancelKasbon(id);
+      if (result.success) {
+        toast.success("Pengajuan kasbon berhasil dibatalkan");
+      } else {
+        toast.error(result.error || "Gagal membatalkan pengajuan");
+      }
+    }
+  };
 
   const [flowState, setFlowState] = useState<FlowState>('idle');
   const [amount, setAmount] = useState<number>(250000);
@@ -131,11 +118,15 @@ export default function Kasbon() {
 
   const usagePercent = kasbonLimit > 0 ? Math.min((usedThisMonth / kasbonLimit) * 100, 100) : 0;
   const thisMonthCount = history.filter(k => {
-    if (!k.requested_at) return false;
+    if (!k.requested_at || k.status === 'rejected') return false;
     const now = new Date();
     const d = new Date(k.requested_at);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   }).length;
+
+  const pendingAmount = history
+    .filter(k => k.status === 'pending')
+    .reduce((sum, k) => sum + k.amount, 0);
 
   const handleSubmit = async () => {
     if (!reason.trim()) {
@@ -177,12 +168,7 @@ export default function Kasbon() {
 
   // ─── LOADING STATE ────────────────────────────────────
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-[#F0FAFF] font-sans">
-        <Loader2 size={36} className="text-[#F5A940] animate-spin mb-4" />
-        <div className="text-[14px] text-[#4A7A8A]">Memuat data kasbon...</div>
-      </div>
-    );
+    return <LoadingScreen message="Memuat data kasbon..." />;
   }
 
   // ─── FORM STATE ───────────────────────────────────────
@@ -193,28 +179,27 @@ export default function Kasbon() {
     return (
       <div className="flex flex-col min-h-screen bg-[#F0FAFF] font-sans">
         {/* Header */}
-        <div className="p-6 pb-5 flex items-center gap-3.5">
-          <Button
-            onClick={() => !isSubmitting && setFlowState('idle')}
-            disabled={isSubmitting}
-            variant="outline"
-            size="icon"
-            className="cursor-pointer disabled:opacity-50"
-          >
-            <ChevronLeft size={20} />
-          </Button>
-          <div className="font-['Syne'] text-[22px] font-bold text-[#1A3A4A] tracking-[-0.3px]">Ajukan Kasbon</div>
-        </div>
+        <PageHeader title="Ajukan Kasbon" onBack={() => !isSubmitting && setFlowState('idle')} disabled={isSubmitting} />
 
         {/* Body */}
         <div className="px-5 flex-1 overflow-y-auto hide-scrollbar">
           {/* Amount */}
-          <div className="bg-white border border-[#C8E8F5] rounded-[22px] p-5 mb-3.5 text-center shadow-sm">
+          <Card className="mb-3.5 text-center">
             <div className="text-[11px] text-[#8ABAC8] uppercase tracking-[1px] font-mono mb-3.5">Jumlah kasbon</div>
             <div className="font-['Syne'] text-[44px] font-bold text-[#1A3A4A] tracking-[-2px] leading-none mb-4 min-h-[52px] flex items-center justify-center gap-1">
-              <span className="text-[22px] text-[#4A7A8A] font-light self-start mt-2">Rp</span>
-              <span>{amount.toLocaleString('id-ID')}</span>
-              <span className="inline-block w-[2px] h-[40px] bg-[#F5A940] rounded-[1px] animate-pulse ml-0.5 align-middle"></span>
+              <span className="text-[22px] text-[#4A7A8A] font-light self-start mt-2 select-none">Rp</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={amount === 0 ? "" : amount.toString().replace(/\D/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.')}
+                onChange={e => {
+                  const rawVal = e.target.value.replace(/\D/g, '');
+                  setAmount(rawVal === '' ? 0 : parseInt(rawVal, 10));
+                }}
+                disabled={isSubmitting}
+                className="bg-transparent border-none outline-none focus:outline-none focus:ring-0 p-0 m-0 text-left font-['Syne'] text-[44px] font-bold text-[#1A3A4A] tracking-[-2px] focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-none"
+                style={{ width: `${Math.max((amount === 0 ? 1 : amount.toString().replace(/\D/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.').length) * 26, 120)}px` }}
+              />
             </div>
 
             <div className="flex gap-2 justify-center flex-wrap">
@@ -234,51 +219,53 @@ export default function Kasbon() {
                 </Button>
               ))}
             </div>
-          </div>
+          </Card>
 
           {/* Info: approval rule */}
-          <div className="bg-white border border-[#C8E8F5] rounded-[16px] p-3.5 mb-3.5 flex gap-3 items-start shadow-sm">
+          <Card className="rounded-[16px] p-3.5 mb-3.5 flex gap-3 items-start">
             <div className="w-8 h-8 rounded-[10px] flex items-center justify-center shrink-0 bg-[#F5A940]/10 border border-[#F5A940]/30">
               <Info size={16} className="text-[#F5A940]" />
             </div>
-            <div className="flex-1">
+            <div className="flex-1 text-left">
               <div className="text-[13px] font-medium text-[#1A3A4A] mb-1">Perlu persetujuan admin</div>
               <div className="text-[12px] text-[#4A7A8A] leading-[1.5]">Kasbon &gt; Rp 200k memerlukan approval dari admin sebelum bisa dicairkan. Biasanya diproses dalam 1–2 jam kerja.</div>
             </div>
-          </div>
+          </Card>
 
           {/* Warning: limit */}
           {exceedsLimit ? (
-            <div className="bg-[#F87171]/10 border border-[#F87171]/30 rounded-[14px] p-3 mb-3.5 flex gap-2.5 items-start">
-              <AlertTriangle size={16} className="text-[#F87171] shrink-0 mt-[1px]" />
-              <div className="text-[12px] text-[#F87171] leading-[1.5]">
+            <Alert variant="destructive" className="mb-3.5">
+              <AlertTriangle size={16} className="shrink-0" />
+              <AlertDescription>
                 Jumlah kasbon <strong>melebihi</strong> sisa limit! Sisa limit kamu <strong className="text-[#1A3A4A]">{formatCurrencyFull(remainingLimit)}</strong>.
-              </div>
-            </div>
+              </AlertDescription>
+            </Alert>
           ) : (
-            <div className="bg-[#F5A940]/10 border border-[#F5A940]/30 rounded-[14px] p-3 mb-3.5 flex gap-2.5 items-start">
-              <Info size={16} className="text-[#F5A940] shrink-0 mt-[1px]" />
-              <div className="text-[12px] text-[#4A7A8A] leading-[1.5]">Sisa limit kamu <strong className="text-[#1A3A4A]">{formatCurrencyFull(remainingLimit)}</strong>. Jumlah kasbon tidak boleh melebihi sisa limit bulan ini.</div>
-            </div>
+            <Alert variant="warning" className="mb-3.5">
+              <Info size={16} className="shrink-0" />
+              <AlertDescription>
+                Sisa limit kamu <strong className="text-[#1A3A4A]">{formatCurrencyFull(remainingLimit)}</strong>. Jumlah kasbon tidak boleh melebihi sisa limit bulan ini.
+              </AlertDescription>
+            </Alert>
           )}
 
           {/* Submit Error */}
           {submitError && (
-            <div className="bg-[#F87171]/10 border border-[#F87171]/30 rounded-[14px] p-3 mb-3.5 flex gap-2.5 items-start animate-shake">
-              <AlertTriangle size={16} className="text-[#F87171] shrink-0 mt-[1px]" />
-              <div className="text-[12px] text-[#F87171] leading-[1.5]">{submitError}</div>
-            </div>
+            <Alert variant="destructive" className="mb-3.5 animate-shake">
+              <AlertTriangle size={16} className="shrink-0" />
+              <AlertDescription>{submitError}</AlertDescription>
+            </Alert>
           )}
 
           {/* Fields */}
-          <div className="flex flex-col gap-3 mb-3.5">
+          <div className="flex flex-col gap-3 mb-3.5 text-left">
             <div className={`bg-white border rounded-[16px] p-3.5 transition-colors focus-within:border-[#8ABAC8] shadow-sm ${
               submitError && !reason.trim() ? 'border-[#F87171]' : 'border-[#C8E8F5]'
             }`}>
               <div className="text-[10.5px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono mb-1.5">Alasan pengajuan</div>
-              <input
+              <Input
                 ref={reasonRef}
-                className="bg-transparent border-none outline-none font-sans text-[14px] text-[#1A3A4A] w-full placeholder:text-[#8ABAC8]"
+                className="h-auto p-0 border-none rounded-none focus-visible:ring-0 focus-visible:border-none focus-visible:ring-offset-0 bg-transparent placeholder:text-[#8ABAC8]"
                 type="text"
                 placeholder="Biaya berobat, keperluan keluarga, dll..."
                 value={reason}
@@ -288,22 +275,20 @@ export default function Kasbon() {
             </div>
             <div className="bg-white border border-[#C8E8F5] rounded-[16px] p-3.5 transition-colors focus-within:border-[#8ABAC8] shadow-sm">
               <div className="text-[10.5px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono mb-1.5">Kategori</div>
-              <select
-                className="bg-transparent border-none outline-none font-sans text-[14px] text-[#1A3A4A] w-full appearance-none cursor-pointer"
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238ABAC8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                  backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'right 0 center',
-                  paddingRight: '20px'
-                }}
+              <Select
                 value={category}
-                onChange={(e) => setCategory(e.target.value)}
+                onValueChange={setCategory}
                 disabled={isSubmitting}
               >
-                {CATEGORIES.map(c => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
+                <SelectTrigger className="h-auto p-0 border-none rounded-none focus-visible:ring-0 shadow-none text-[14px]">
+                  <SelectValue placeholder="Pilih kategori" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </div>
@@ -458,6 +443,11 @@ export default function Kasbon() {
         <div className="flex justify-between items-center relative z-10">
           <div className="text-[12.5px] text-[#4A7A8A]">
             Sisa limit: <strong className="text-[#1A3A4A] font-semibold">{formatCurrency(remainingLimit)}</strong>
+            {pendingAmount > 0 && (
+              <span className="text-[11px] text-[#8ABAC8] ml-1.5">
+                (termasuk {formatCurrency(pendingAmount)} pending)
+              </span>
+            )}
           </div>
           <div className="text-[11px] text-[#8ABAC8] font-mono">{getNextMonthReset()}</div>
         </div>
@@ -540,11 +530,24 @@ export default function Kasbon() {
                   {item.reason || item.category || '-'}
                 </div>
               </div>
-              <div className="text-right shrink-0">
-                <div className="text-[11px] text-[#8ABAC8] font-mono mb-1.5">
+              <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                <div className="text-[11px] text-[#8ABAC8] font-mono">
                   {formatDate(item.requested_at)}
                 </div>
-                <StatusBadge status={item.status} />
+                <KasbonStatusBadge status={item.status} />
+                {item.status === 'pending' && (
+                  <Button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCancel(item.id);
+                    }}
+                    variant="destructive"
+                    size="sm"
+                    className="h-6 px-2.5 text-[11px] mt-1"
+                  >
+                    Batal
+                  </Button>
+                )}
               </div>
             </div>
           ))

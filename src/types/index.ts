@@ -4,7 +4,7 @@ export type UserRole = 'admin' | 'superadmin' | 'employee'
 
 export type AttendanceStatus = 'ontime' | 'late' | 'absent'
 
-export type KasbonStatus = 'pending' | 'approved' | 'deducted'
+export type KasbonStatus = 'pending' | 'approved' | 'deducted' | 'rejected'
 
 export type PayrollStatus = 'pending' | 'paid'
 

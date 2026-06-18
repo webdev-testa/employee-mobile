@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
 import type { Kasbon } from '@/types'
 
 interface UseKasbonReturn {
@@ -13,6 +14,7 @@ interface UseKasbonReturn {
   refreshing: boolean
   refresh: () => Promise<void>
   submitKasbon: (amount: number, reason: string, category: string) => Promise<{ success: boolean; error?: string }>
+  cancelKasbon: (id: string) => Promise<{ success: boolean; error?: string }>
 }
 
 export function useKasbon(userId: string | undefined): UseKasbonReturn {
@@ -147,6 +149,68 @@ export function useKasbon(userId: string | undefined): UseKasbonReturn {
     return { success: true }
   }, [userId, kasbonLimit, usedThisMonth, loadAll])
 
+  const cancelKasbon = useCallback(async (id: string): Promise<{ success: boolean; error?: string }> => {
+    if (!userId) return { success: false, error: 'User tidak terautentikasi' }
+
+    const { error: deleteError } = await supabase
+      .schema('hr')
+      .from('kasbon')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId)
+      .eq('status', 'pending')
+
+    if (deleteError) {
+      console.error('Error cancelling kasbon:', deleteError)
+      return { success: false, error: 'Gagal membatalkan pengajuan. Coba lagi.' }
+    }
+
+    await loadAll()
+    return { success: true }
+  }, [userId, loadAll])
+
+  useEffect(() => {
+    if (!userId) return
+
+    const channel = supabase
+      .channel(`kasbon_user_${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'hr',
+          table: 'kasbon',
+          filter: `user_id=eq.${userId}`
+        },
+        (payload) => {
+          console.log('Realtime kasbon change detected:', payload)
+          loadAll()
+
+          if (payload.eventType === 'UPDATE') {
+            const oldStatus = payload.old?.status
+            const newStatus = payload.new?.status
+            const amount = payload.new?.amount
+            
+            if (oldStatus !== newStatus) {
+              const formattedAmt = `Rp ${Number(amount).toLocaleString('id-ID')}`
+              if (newStatus === 'approved') {
+                toast.success(`Kasbon sebesar ${formattedAmt} telah DISETUJUI oleh admin!`)
+              } else if (newStatus === 'rejected') {
+                toast.error(`Kasbon sebesar ${formattedAmt} telah DITOLAK oleh admin.`)
+              } else if (newStatus === 'deducted') {
+                toast.info(`Kasbon sebesar ${formattedAmt} telah dipotong dari gaji.`)
+              }
+            }
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [userId, loadAll])
+
   const remainingLimit = kasbonLimit - usedThisMonth
   const pendingCount = history.filter(k => k.status === 'pending').length
 
@@ -161,5 +225,6 @@ export function useKasbon(userId: string | undefined): UseKasbonReturn {
     refreshing,
     refresh,
     submitKasbon,
+    cancelKasbon,
   }
 }

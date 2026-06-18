@@ -3,9 +3,11 @@ import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 import { supabase } from "@/lib/supabase";
 import { useClockIn, useClockOut } from "@/hooks/useAbsensi";
 import { useAuth } from "@/hooks/useAuth";
+import { useKasbon } from "@/hooks/useKasbon";
 import { toast } from "sonner";
 import { isWithinArea, getDistance } from "@/lib/geofence";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   MapPin,
   CheckCircle2,
@@ -41,14 +43,17 @@ export default function EmployeeHome() {
   const [coords, setCoords] = useState<GeolocationCoordinates | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
-  const [usedKasbon, setUsedKasbon] = useState(0);
-  const [kasbonLimit, setKasbonLimit] = useState(1000000);
+  const { usedThisMonth: usedKasbon, kasbonLimit } = useKasbon(authUser?.id);
   const [salary, setSalary] = useState(0);
 
   const mapRef = useRef<HTMLDivElement>(null);
 
   const { capturePhoto, getLocation, saveAttendance } = useClockIn();
   const { saveClockOut, resetAttendanceDev } = useClockOut();
+  const isCutiActive = !!(
+    todayRecord &&
+    ["cuti", "izin", "sakit", "cuti_pending", "izin_pending", "sakit_pending"].includes(todayRecord.status)
+  );
 
   useEffect(() => {
     if (flowState === "confirm" && coords && mapRef.current) {
@@ -78,33 +83,12 @@ export default function EmployeeHome() {
     }
   }, [flowState, coords]);
 
-  // Load user details and Kasbon usage
+  // Load user details
   useEffect(() => {
     if (!authUser) return;
 
     setUserName(authUser.name || "Employee");
     setSalary(authUser.salary ?? 0);
-    setKasbonLimit(authUser.kasbon_limit ?? 1000000);
-
-    const fetchKasbonUsage = async () => {
-      const now = new Date();
-      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-
-      const { data, error } = await supabase
-        .schema("hr")
-        .from("kasbon")
-        .select("amount")
-        .eq("user_id", authUser.id)
-        .gte("requested_at", monthStart)
-        .neq("status", "rejected");
-
-      if (!error && data) {
-        const total = data.reduce((sum, k) => sum + Number(k.amount), 0);
-        setUsedKasbon(total);
-      }
-    };
-
-    fetchKasbonUsage();
   }, [authUser]);
 
   useEffect(() => {
@@ -192,7 +176,7 @@ export default function EmployeeHome() {
     }
     try {
       setLoading(true);
-      await saveAttendance(photoBlob, coords);
+      await saveAttendance(photoBlob, coords, authUser?.shift);
       
       const today = new Date().toISOString().split("T")[0];
       const { data } = await supabase
@@ -513,18 +497,22 @@ export default function EmployeeHome() {
               </div>
               <div
                 className={`font-mono text-[14px] font-medium ${
-                  !todayRecord 
-                    ? "text-[#F5A940]" 
-                    : todayRecord.clock_out_time 
-                      ? "text-neutral-400" 
-                      : "text-[#3AAD7A]"
+                  isCutiActive
+                    ? "text-[#4A7A8A]"
+                    : !todayRecord 
+                      ? "text-[#F5A940]" 
+                      : todayRecord.clock_out_time 
+                        ? "text-neutral-400" 
+                        : "text-[#3AAD7A]"
                 }`}
               >
-                {!todayRecord 
-                  ? "Belum Absen" 
-                  : todayRecord.clock_out_time 
-                    ? "Selesai Kerja" 
-                    : "Sudah Masuk"}
+                {isCutiActive
+                  ? "Cuti / Izin Kerja"
+                  : !todayRecord 
+                    ? "Belum Absen" 
+                    : todayRecord.clock_out_time 
+                      ? "Selesai Kerja" 
+                      : "Sudah Masuk"}
               </div>
             </div>
             <div className="flex-1 bg-[#F0FAFF] border border-[#C8E8F5] rounded-[14px] p-3">
@@ -539,29 +527,38 @@ export default function EmployeeHome() {
 
           <Button
             onClick={
-              !todayRecord 
-                ? handleStartClockIn 
-                : todayRecord.clock_out_time 
-                  ? undefined 
-                  : handleStartClockOut
+              isCutiActive
+                ? undefined
+                : !todayRecord 
+                  ? handleStartClockIn 
+                  : todayRecord.clock_out_time 
+                    ? undefined 
+                    : handleStartClockOut
             }
-            disabled={loading || !!(todayRecord && todayRecord.clock_out_time)}
+            disabled={loading || isCutiActive || !!(todayRecord && todayRecord.clock_out_time)}
             variant={
-              todayRecord && todayRecord.clock_out_time
+              isCutiActive
                 ? "outline"
-                : todayRecord
-                  ? "red"
-                  : "orange"
+                : todayRecord && todayRecord.clock_out_time
+                  ? "outline"
+                  : todayRecord
+                    ? "red"
+                    : "orange"
             }
             size="xl"
             className={`w-full flex items-center justify-center gap-3 relative overflow-hidden ${
-              todayRecord && todayRecord.clock_out_time
+              (isCutiActive || (todayRecord && todayRecord.clock_out_time))
                 ? "bg-neutral-100 text-neutral-400 border border-neutral-200 cursor-not-allowed shadow-none"
                 : ""
             }`}
           >
             {loading ? (
               <RefreshCw size={20} className="animate-spin text-white" />
+            ) : isCutiActive ? (
+              <>
+                <CheckCircle2 size={20} />
+                Sedang Cuti / Izin
+              </>
             ) : todayRecord && todayRecord.clock_out_time ? (
               <>
                 <CheckCircle2 size={20} />
@@ -584,7 +581,7 @@ export default function EmployeeHome() {
 
         {/* Mini Stats */}
         <div className="grid grid-cols-2 gap-3 mb-5">
-          <div className="bg-white border border-[#C8E8F5] rounded-[18px] p-4 shadow-sm">
+          <Card className="rounded-[18px] p-4">
             <div className="text-[10.5px] text-[#8ABAC8] uppercase tracking-wide font-mono mb-2">
               Kasbon
             </div>
@@ -598,8 +595,8 @@ export default function EmployeeHome() {
                 style={{ width: `${kasbonLimit > 0 ? Math.min((usedKasbon / kasbonLimit) * 100, 100) : 0}%` }}
               ></div>
             </div>
-          </div>
-          <div className="bg-white border border-[#C8E8F5] rounded-[18px] p-4 shadow-sm">
+          </Card>
+          <Card className="rounded-[18px] p-4">
             <div className="text-[10.5px] text-[#8ABAC8] uppercase tracking-wide font-mono mb-2">
               Estimasi Gaji
             </div>
@@ -613,7 +610,7 @@ export default function EmployeeHome() {
                 style={{ width: `${salary > 0 ? Math.max(0, Math.min(((salary - usedKasbon) / salary) * 100, 100)) : 100}%` }}
               ></div>
             </div>
-          </div>
+          </Card>
         </div>
 
         {/* Dev Action */}

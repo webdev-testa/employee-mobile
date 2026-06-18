@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { ChevronLeft, FileText, Printer, CheckCircle, Clock, X } from "lucide-react";
+import { FileText, Printer, CheckCircle, Clock, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
+import { PageHeader } from "@/components/layout/PageHeader";
 
 export default function EmployeeSlipGaji() {
   const navigate = useNavigate();
@@ -25,6 +27,7 @@ export default function EmployeeSlipGaji() {
           .from("payroll")
           .select("*")
           .eq("user_id", user.id)
+          .eq("status", "paid")
           .order("period", { ascending: false });
 
         if (error) throw error;
@@ -53,6 +56,10 @@ export default function EmployeeSlipGaji() {
 
   // Local Print Slip Gaji Functionality
   const handlePrint = (item: any) => {
+    if ((window as any).Capacitor?.isNativePlatform?.()) {
+      toast.info("Fitur cetak langsung tidak didukung di perangkat mobile. Silakan gunakan tangkapan layar (screenshot) untuk menyimpan slip gaji Anda.");
+      return;
+    }
     setSelectedSlip(item);
     setTimeout(() => {
       window.print();
@@ -85,21 +92,8 @@ export default function EmployeeSlipGaji() {
       `}} />
 
       {/* Header */}
-      <div className="p-6 pb-5 flex items-center gap-3.5 bg-white border-b border-[#C8E8F5] shadow-sm">
-        <Button
-          onClick={() => navigate("/employee/profil")}
-          variant="outline"
-          size="icon"
-          className="cursor-pointer"
-        >
-          <ChevronLeft size={20} />
-        </Button>
-        <div>
-          <h1 className="font-['Syne'] text-[20px] font-bold text-[#1A3A4A] tracking-[-0.3px]">
-            Slip Gaji
-          </h1>
-          <p className="text-[12.5px] text-[#4A7A8A] mt-0.5">Riwayat penerimaan gaji bulanan</p>
-        </div>
+      <div className="bg-white border-b border-[#C8E8F5] shadow-sm">
+        <PageHeader title="Slip Gaji" onBack={() => navigate("/employee/profil")} />
       </div>
 
       {/* Main content */}
@@ -164,29 +158,28 @@ export default function EmployeeSlipGaji() {
       </div>
 
       {/* DETAIL MODAL / sliding drawer overlay */}
-      {showDetail && selectedSlip && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white border border-[#C8E8F5] rounded-[24px] overflow-hidden flex flex-col shadow-xl animate-in slide-in-from-bottom duration-200">
-            
+      <Dialog open={showDetail} onOpenChange={setShowDetail}>
+        {selectedSlip && (
+          <DialogContent showCloseButton={false} className="w-full max-w-md bg-white border border-[#C8E8F5] rounded-[24px] p-0 overflow-hidden shadow-xl">
             {/* Header */}
             <div className="p-5 border-b border-[#F0FAFF] flex items-center justify-between">
               <div>
-                <h3 className="font-['Syne'] text-[17px] font-bold text-[#1A3A4A]">Rincian Gaji</h3>
-                <p className="text-[12px] text-[#4A7A8A] mt-0.5">{getPeriodLabel(selectedSlip.period)}</p>
+                <DialogTitle className="font-['Syne'] text-[17px] font-bold text-[#1A3A4A]">Rincian Gaji</DialogTitle>
+                <DialogDescription className="text-[12px] text-[#4A7A8A] mt-0.5">{getPeriodLabel(selectedSlip.period)}</DialogDescription>
               </div>
-              <Button
-                onClick={() => setShowDetail(false)}
-                variant="outline"
-                size="sm"
-                className="w-8 h-8 cursor-pointer rounded-lg bg-[#F0FAFF] p-0"
-              >
-                <X size={18} />
-              </Button>
+              <DialogClose asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-8 h-8 cursor-pointer rounded-lg bg-[#F0FAFF] p-0"
+                >
+                  <X size={18} />
+                </Button>
+              </DialogClose>
             </div>
 
             {/* Content */}
-            <div className="p-6 space-y-5 flex-grow overflow-y-auto">
-              
+            <div className="p-6 space-y-5 flex-grow overflow-y-auto text-left">
               {/* Receipt Style Box */}
               <div className="bg-[#F0FAFF] border border-[#C8E8F5] rounded-[20px] p-5">
                 <div className="text-[10.5px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono border-b border-[#C8E8F5] pb-2 mb-3">
@@ -232,13 +225,14 @@ export default function EmployeeSlipGaji() {
 
             {/* Actions */}
             <div className="p-4 bg-[#F0FAFF] border-t border-[#C8E8F5] flex gap-2.5">
-              <Button
-                onClick={() => setShowDetail(false)}
-                variant="outline"
-                className="flex-1 py-3 font-['Syne'] text-[14.5px] font-bold cursor-pointer bg-white text-[#1A3A4A] hover:bg-[#F0FAFF]"
-              >
-                Tutup
-              </Button>
+              <DialogClose asChild>
+                <Button
+                  variant="outline"
+                  className="flex-1 py-3 font-['Syne'] text-[14.5px] font-bold cursor-pointer bg-white text-[#1A3A4A] hover:bg-[#F0FAFF]"
+                >
+                  Tutup
+                </Button>
+              </DialogClose>
               <Button
                 onClick={() => handlePrint(selectedSlip)}
                 variant="orange"
@@ -248,9 +242,9 @@ export default function EmployeeSlipGaji() {
                 Cetak Slip
               </Button>
             </div>
-          </div>
-        </div>
-      )}
+          </DialogContent>
+        )}
+      </Dialog>
 
       {/* PRINT PAYSLIP TEMPLATE CONTAINER (Hidden on screen, styled for print only) */}
       {selectedSlip && (

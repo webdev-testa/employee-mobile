@@ -6,6 +6,7 @@ import {
 } from "react-router-dom";
 import { useAuth, AuthProvider } from "@/hooks/useAuth";
 import LoginPage from "@/pages/login/loginPage";
+import ChangePasswordPage from "@/pages/login/ChangePassword";
 import EmployeeHome from "@/pages/Home";
 import EmployeeAbsensi from "@/pages/Absensi";
 import EmployeeKasbon from "@/pages/Kasbon";
@@ -37,6 +38,10 @@ function AuthGuard() {
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (user.must_change_password && location.pathname !== "/change-password") {
+    return <Navigate to="/change-password" replace />;
   }
 
   return <Outlet />;
@@ -108,6 +113,10 @@ export const router = createBrowserRouter([
       {
         element: <AuthGuard />,
         children: [
+          {
+            path: "/change-password",
+            element: <ChangePasswordPage />,
+          },
           {
             element: <RoleGuard allowedRoles={["admin", "superadmin"]} />,
             children: [

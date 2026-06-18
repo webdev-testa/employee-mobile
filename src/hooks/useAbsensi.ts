@@ -31,7 +31,16 @@ export function useClockIn() {
     })
   }
 
-  const saveAttendance = async (photo: Blob, coords: GeolocationCoordinates) => {
+  const getShiftStart = (shiftStr?: string | null) => {
+    if (!shiftStr) return { hour: 8, minute: 0 }
+    const match = shiftStr.match(/^(\d{2}):(\d{2})/)
+    if (match) {
+      return { hour: parseInt(match[1]), minute: parseInt(match[2]) }
+    }
+    return { hour: 8, minute: 0 }
+  }
+
+  const saveAttendance = async (photo: Blob, coords: GeolocationCoordinates, shiftStr?: string | null) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Not logged in')
 
@@ -50,18 +59,24 @@ export function useClockIn() {
       .from('attendance-photos')
       .getPublicUrl(filename)
 
+    // Calculate late status
+    const now = new Date()
+    const shiftStart = getShiftStart(shiftStr)
+    const shiftTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), shiftStart.hour, shiftStart.minute, 0, 0)
+    const status = now.getTime() > shiftTime.getTime() ? 'late' : 'ontime'
+
     // Save to attendance
     const { error } = await supabase
       .schema('hr')
       .from('attendance')
       .insert({
         user_id: user.id,
-        date: new Date().toISOString().split('T')[0],
-        clock_in_time: new Date().toISOString(),
+        date: now.toISOString().split('T')[0],
+        clock_in_time: now.toISOString(),
         clock_in_lat: coords.latitude,
         clock_in_lng: coords.longitude,
         clock_in_photo_url: publicUrl,
-        status: 'ontime'  // you can calculate late logic here later
+        status: status
       })
 
     if (error) throw error
