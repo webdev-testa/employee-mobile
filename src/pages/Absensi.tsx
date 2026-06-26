@@ -16,8 +16,8 @@ import { toast } from "sonner";
 import { getDistance } from "@/lib/geofence";
 
 // Office Coordinates
-const OFFICE_LAT = -8.00970;
-const OFFICE_LNG = 112.61071;
+const OFFICE_LAT = -6.19026;
+const OFFICE_LNG = 106.82391;
 
 type FlowState = "list" | "detail" | "form" | "success";
 
@@ -149,10 +149,6 @@ export default function EmployeeAbsensi() {
     const isFuture = dateStr > todayStr;
     const isHoliday = holidaysList.includes(dateStr);
 
-    if (isFuture) {
-      return "text-neutral-300 cursor-default";
-    }
-
     if (record) {
       const status = record.status;
       if (status === "ontime") return "bg-[#E2F0E8] border border-[#3AAD7A]/30 text-[#3AAD7A]";
@@ -161,6 +157,10 @@ export default function EmployeeAbsensi() {
       if (status.includes("rejected")) return "bg-red-50 border border-red-200 text-red-400 line-through";
       if (["cuti", "izin", "sakit"].includes(status)) return "bg-[#F0FAFF] border border-[#C8E8F5] text-[#4A7A8A]";
       if (status === "absent") return "bg-[#F87171]/10 border border-[#F87171]/30 text-[#F87171]";
+    }
+
+    if (isFuture) {
+      return "text-neutral-300 cursor-default";
     }
 
     if (isHoliday) {
@@ -204,7 +204,7 @@ export default function EmployeeAbsensi() {
   const handleDayClick = (dateStr: string) => {
     if (!dateStr) return;
     const todayStr = new Date().toISOString().split("T")[0];
-    if (dateStr > todayStr) return;
+    if (dateStr > todayStr && !attendanceMap[dateStr]) return;
 
     const record = attendanceMap[dateStr];
     if (record) {
@@ -776,13 +776,17 @@ export default function EmployeeAbsensi() {
   const calendarCells = calendarDays.map((cell, idx) => {
     const isWeekend = idx % 7 === 0 || idx % 7 === 6;
     const statusClass = getDayStatusClass(cell.dateStr, isWeekend);
+    const todayStr = new Date().toISOString().split("T")[0];
+    const isFuture = cell.dateStr > todayStr;
+    const hasRecord = !!attendanceMap[cell.dateStr];
+    const isClickable = cell.day && (!isFuture || hasRecord);
 
     return (
       <div
         key={idx}
-        onClick={() => cell.day && handleDayClick(cell.dateStr)}
+        onClick={() => isClickable && handleDayClick(cell.dateStr)}
         className={`aspect-square rounded-[10px] flex items-center justify-center font-mono text-[13px] font-medium transition-all ${
-          cell.day ? "cursor-pointer hover:scale-105 active:scale-95" : ""
+          isClickable ? "cursor-pointer hover:scale-105 active:scale-95" : ""
         } ${statusClass}`}
       >
         {cell.day || ""}

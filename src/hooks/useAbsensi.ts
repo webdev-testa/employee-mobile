@@ -94,24 +94,9 @@ export function useClockIn() {
 }
 
 export function useClockOut() {
-  const saveClockOut = async (photo: Blob, coords: GeolocationCoordinates) => {
+  const saveClockOut = async (coords: GeolocationCoordinates) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Not logged in')
-
-    // Upload photo to storage
-    const filename = `${user.id}/${Date.now()}_out.jpg`
-    const { error: uploadError } = await supabase
-      .storage
-      .from('attendance-photos')
-      .upload(filename, photo)
-    
-    if (uploadError) throw uploadError
-
-    // Get photo URL
-    const { data: { publicUrl } } = supabase
-      .storage
-      .from('attendance-photos')
-      .getPublicUrl(filename)
 
     const today = new Date().toISOString().split('T')[0]
 
@@ -122,8 +107,7 @@ export function useClockOut() {
       .update({
         clock_out_time: new Date().toISOString(),
         clock_out_lat: coords.latitude,
-        clock_out_lng: coords.longitude,
-        clock_out_photo_url: publicUrl
+        clock_out_lng: coords.longitude
       })
       .eq('user_id', user.id)
       .eq('date', today)

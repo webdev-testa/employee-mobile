@@ -20,8 +20,8 @@ import {
 type FlowState = "idle" | "confirm" | "success";
 
 // TODO: Set your actual office coordinates here
-const OFFICE_LAT = -8.00970; 
-const OFFICE_LNG = 112.61071;
+const OFFICE_LAT = -6.19026;
+const OFFICE_LNG = 106.82391;
 const GEOFENCE_RADIUS = 100; // in meters
 
 function formatCurrencyShort(n: number): string {
@@ -146,15 +146,12 @@ export default function EmployeeHome() {
 
     try {
       setLoading(true);
-      toast.info("Membuka kamera...");
-      const photo = await capturePhoto();
-
       toast.info("Mengambil lokasi GPS...");
       const loc = await getLocation();
 
-      setPhotoBlob(photo);
+      setPhotoBlob(null);
       setCoords(loc);
-      setPhotoUrl(URL.createObjectURL(photo));
+      setPhotoUrl(null);
       setActionType("out");
       setFlowState("confirm");
     } catch (error: any) {
@@ -198,7 +195,7 @@ export default function EmployeeHome() {
   };
 
   const handleConfirmClockOut = async () => {
-    if (!photoBlob || !coords) return;
+    if (!coords) return;
     const isOk = isWithinArea(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG, GEOFENCE_RADIUS);
     if (!isOk) {
       const dist = getDistance(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG);
@@ -209,7 +206,7 @@ export default function EmployeeHome() {
     }
     try {
       setLoading(true);
-      await saveClockOut(photoBlob, coords);
+      await saveClockOut(coords);
       
       const today = new Date().toISOString().split("T")[0];
       const { data } = await supabase
@@ -276,12 +273,17 @@ export default function EmployeeHome() {
 
         <div className="flex-1 p-6 overflow-y-auto">
           <div className="rounded-[20px] overflow-hidden border border-[#C8E8F5] relative bg-[#0D2D3D] shadow-sm h-[300px]">
-            {photoUrl && (
+            {photoUrl ? (
               <img
                 src={photoUrl}
                 alt="Selfie"
                 className="w-full h-full object-cover"
               />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center text-white/40 gap-3">
+                <MapPin size={48} className="stroke-[1.2]" />
+                <div className="text-[13px] font-medium font-mono text-white/60">Absen Pulang (Tanpa Foto)</div>
+              </div>
             )}
             <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-4 backdrop-blur-md">
               <div className="flex justify-between items-center">
@@ -376,7 +378,7 @@ export default function EmployeeHome() {
             variant="outline"
             className="w-full mt-3 font-medium text-[14px]"
           >
-            Foto Ulang
+            {actionType === "in" ? "Foto Ulang" : "Batal"}
           </Button>
         </div>
       </div>
