@@ -83,7 +83,7 @@ export default function ChangePasswordPage() {
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#F5A940]/10 text-[#F5A940] mb-4">
             <Key size={24} />
           </div>
-          <h1 className="font-['Syne'] text-[22px] font-bold tracking-tight text-[#1A3A4A]">Atur Password Baru</h1>
+          <h1 className="font-display text-[22px] font-bold tracking-tight text-[#1A3A4A]">Atur Password Baru</h1>
           <p className="text-[13px] text-[#4A7A8A] mt-2 leading-relaxed">
             Demi keamanan akun Anda, silakan ubah password sementara Anda sebelum melanjutkan.
           </p>

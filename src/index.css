@@ -8,6 +8,29 @@
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;
+
+    /* Figma Design System Block Tokens */
+    --color-block-lime: #dceeb1;
+    --color-block-lilac: #c5b0f4;
+    --color-block-cream: #f4ecd6;
+    --color-block-pink: #efd4d4;
+    --color-block-mint: #c8e6cd;
+    --color-block-coral: #f3c9b6;
+    --color-block-navy: #1f1d3d;
+    --color-accent-magenta: #ff3d8b;
+
+    /* Semantic Status Tokens */
+    --color-status-success: #3aad7a;
+    --color-status-success-bg: #e2f0e8;
+    --color-status-warning: #e89e3a;
+    --color-status-warning-bg: #faf0e1;
+    --color-status-danger: #f87171;
+    --color-status-info: #4a7a8a;
+    --color-status-info-bg: #f0faff;
+    --color-status-info-border: #c8e8f5;
+    --color-status-neutral: #a8a49e;
+    --color-status-neutral-bg: #edeae4;
+
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);

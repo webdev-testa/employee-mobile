@@ -9,27 +9,27 @@ export function AttendanceStatusBadge({ status, className }: AttendanceStatusBad
   const getStatusStyle = (status: string) => {
     switch (status) {
       case "ontime":
-        return "bg-[#E2F0E8] text-[#3AAD7A] border-transparent"
+        return "bg-status-success-bg text-status-success border-transparent font-medium"
       case "late":
-        return "bg-[#FAF0E1] text-[#E89E3A] border-transparent"
+        return "bg-status-warning-bg text-status-warning border-transparent font-medium"
       case "absent":
-        return "bg-[#F87171]/10 text-[#F87171] border-transparent"
+        return "bg-status-danger/10 text-status-danger border-transparent font-medium"
       case "weekend":
-        return "bg-neutral-100 text-neutral-400 border-transparent"
+        return "bg-neutral-100 text-neutral-400 border-transparent font-medium"
       case "cuti":
       case "izin":
       case "sakit":
-        return "bg-[#F0FAFF] text-[#4A7A8A] border-[#C8E8F5]"
+        return "bg-status-info-bg text-status-info border-status-info-border font-medium"
       case "cuti_pending":
       case "izin_pending":
       case "sakit_pending":
-        return "bg-[#F0FAFF] text-[#4A7A8A] border-[#C8E8F5] opacity-80"
+        return "bg-status-info-bg text-status-info border-status-info-border opacity-80 font-medium"
       case "cuti_rejected":
       case "izin_rejected":
       case "sakit_rejected":
-        return "bg-[#F87171]/10 text-[#F87171] border-[#F87171]/20"
+        return "bg-status-danger/10 text-status-danger border-status-danger/20 font-medium"
       default:
-        return "bg-[#EDEAE4] text-[#A8A49E] border-transparent"
+        return "bg-status-neutral-bg text-status-neutral border-transparent font-medium"
     }
   }
 
@@ -85,15 +85,15 @@ export function KasbonStatusBadge({ status, className }: KasbonStatusBadgeProps)
   const getStyle = (status: string) => {
     switch (status) {
       case 'pending':
-        return "bg-[#FAF0E1] text-[#E89E3A] hover:bg-[#FAF0E1] shadow-none border-transparent font-medium"
+        return "bg-status-warning-bg text-status-warning hover:bg-status-warning-bg shadow-none border-transparent font-medium"
       case 'approved':
-        return "bg-[#E2F0E8] text-[#3AAD7A] hover:bg-[#E2F0E8] shadow-none border-transparent font-medium"
+        return "bg-status-success-bg text-status-success hover:bg-status-success-bg shadow-none border-transparent font-medium"
       case 'deducted':
-        return "bg-[#F0FAFF] text-[#4A7A8A] hover:bg-[#F0FAFF] shadow-none border-[#C8E8F5] font-medium"
+        return "bg-status-info-bg text-status-info hover:bg-status-info-bg shadow-none border-status-info-border font-medium"
       case 'rejected':
-        return "bg-[#F87171]/10 text-[#F87171] hover:bg-[#F87171]/10 shadow-none border-transparent font-medium"
+        return "bg-status-danger/10 text-status-danger hover:bg-status-danger/10 shadow-none border-transparent font-medium"
       default:
-        return "bg-[#EDEAE4] text-[#A8A49E] border-transparent font-medium"
+        return "bg-status-neutral-bg text-status-neutral border-transparent font-medium"
     }
   }
 

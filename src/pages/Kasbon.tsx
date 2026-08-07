@@ -1,17 +1,11 @@
 import { useState, useRef } from "react";
-import { Info, AlertTriangle, Send, Check, ChevronRight, ChevronLeft, Loader2, RefreshCw } from "lucide-react";
+import { Info, AlertTriangle, Send, ChevronLeft, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useKasbon } from "@/hooks/useKasbon";
 import type { Kasbon as KasbonType } from "@/types";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { PageHeader } from "@/components/layout/PageHeader";
 import { LoadingScreen } from "@/components/ui/LoadingScreen";
-import { KasbonStatusBadge } from "@/components/ui/status-badge";
 
 type FlowState = 'idle' | 'form' | 'submitting' | 'success' | 'error';
 
@@ -41,45 +35,10 @@ function formatDateFull(dateStr: string | null): string {
     ' · ' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 }
 
-function getMonthName(): string {
-  return new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
-}
-
 function getNextMonthReset(): string {
   const now = new Date();
   const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   return `Reset ${next.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`;
-}
-
-// StatusBadge deleted since we use KasbonStatusBadge from status-badge.tsx
-
-function StatusIcon({ status }: { status: string }) {
-  switch (status) {
-    case 'pending':
-      return (
-        <div className="w-[38px] h-[38px] rounded-xl flex items-center justify-center shrink-0 text-[16px] bg-[#F5A940]/10 border border-[#F5A940]/30">
-          💰
-        </div>
-      );
-    case 'approved':
-      return (
-        <div className="w-[38px] h-[38px] rounded-xl flex items-center justify-center shrink-0 text-[16px] bg-[#3AAD7A]/10 border border-[#3AAD7A]/30 text-[#3AAD7A]">
-          ✓
-        </div>
-      );
-    case 'rejected':
-      return (
-        <div className="w-[38px] h-[38px] rounded-xl flex items-center justify-center shrink-0 text-[16px] bg-[#F87171]/10 border border-[#F87171]/30 text-[#F87171]">
-          ✗
-        </div>
-      );
-    default:
-      return (
-        <div className="w-[38px] h-[38px] rounded-xl flex items-center justify-center shrink-0 text-[16px] bg-[#F0FAFF] border border-[#C8E8F5] text-[#8ABAC8]">
-          −
-        </div>
-      );
-  }
 }
 
 export default function Kasbon() {
@@ -89,10 +48,7 @@ export default function Kasbon() {
     usedThisMonth,
     kasbonLimit,
     remainingLimit,
-    pendingCount,
     loading,
-    refreshing,
-    refresh,
     submitKasbon,
     cancelKasbon,
   } = useKasbon(user?.id);
@@ -267,7 +223,9 @@ export default function Kasbon() {
                   submitError && !reason.trim() ? 'border-destructive' : 'border-border hover:border-muted-foreground/30'
                 }`}
                 type="text"
-                placeholder="Biaya berobat, keperluan keluarga, dll..."
+                maxLength={200}
+                aria-label="Alasan pengajuan kasbon"
+                placeholder="Biaya berobat, keperluan keluarga, dll... (maks. 200 karakter)"
                 value={reason}
                 onChange={(e) => { setReason(e.target.value); setSubmitError(null); }}
                 disabled={isSubmitting}

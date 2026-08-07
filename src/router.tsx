@@ -52,7 +52,7 @@ function RoleGuard({ allowedRoles }: { allowedRoles: string[] }) {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center font-mono text-sm text-[#8ABAC8]">
+      <div className="flex h-screen items-center justify-center font-mono text-sm text-status-info">
         Checking permissions...
       </div>
     );
@@ -65,14 +65,14 @@ function RoleGuard({ allowedRoles }: { allowedRoles: string[] }) {
   if (!allowedRoles.includes(user.role)) {
     if (user.role === "admin" || user.role === "superadmin") {
       return (
-        <div className="flex flex-col h-screen items-center justify-center font-sans text-sm bg-[#F0FAFF] text-[#1A3A4A] p-6 text-center">
-          <div className="text-[#F5A940] mb-4 text-[20px] font-bold font-['Syne']">
+        <div className="flex flex-col h-screen items-center justify-center font-sans text-sm bg-status-info-bg text-foreground p-6 text-center">
+          <div className="text-status-warning mb-4 text-[20px] font-bold font-display">
             Akses Terbatas
           </div>
-          <div className="text-[#4A7A8A] mb-6 max-w-xs leading-relaxed">
+          <div className="text-status-info mb-6 max-w-xs leading-relaxed">
             Akun Admin hanya dapat digunakan melalui portal web admin. Silakan gunakan akun Karyawan untuk masuk ke aplikasi ini.
           </div>
-          <button onClick={() => logout()} className="px-6 py-3 bg-[#F5A940] hover:bg-[#e09833] text-white rounded-[14px] font-sans font-bold font-['Syne'] transition-all cursor-pointer shadow-md">
+          <button onClick={() => logout()} className="px-6 py-3 bg-status-warning hover:opacity-90 text-white rounded-[14px] font-sans font-bold font-display transition-all cursor-pointer shadow-md">
             Log out
           </button>
         </div>
@@ -82,10 +82,10 @@ function RoleGuard({ allowedRoles }: { allowedRoles: string[] }) {
     } else {
       return (
         <div className="flex flex-col h-screen items-center justify-center font-mono text-sm">
-          <div className="text-[#F5A940] mb-2">
+          <div className="text-status-warning mb-2">
             Error: Invalid or missing user role ({user.role || "none"}).
           </div>
-          <button onClick={() => logout()} className="text-blue-500 underline">
+          <button onClick={() => logout()} className="text-primary underline">
             Log out
           </button>
         </div>
