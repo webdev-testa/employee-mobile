@@ -6,9 +6,9 @@ interface LoadingScreenProps {
 
 export function LoadingScreen({ message = "Memuat data..." }: LoadingScreenProps) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#F0FAFF] font-sans">
-      <Loader2 size={36} className="text-[#F5A940] animate-spin mb-4" />
-      <div className="text-[14px] text-[#4A7A8A]">{message}</div>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-background font-sans">
+      <Loader2 size={36} className="text-[#0c1d2a] dark:text-[#faf8f5] animate-spin mb-4" />
+      <div className="text-sm font-medium text-muted-foreground">{message}</div>
     </div>
   )
 }

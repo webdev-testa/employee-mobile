@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
-import { FileText, Printer, CheckCircle, Clock, X } from "lucide-react";
+import { FileText, Printer, CheckCircle, Clock, X, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
@@ -67,7 +67,7 @@ export default function EmployeeSlipGaji() {
   };
 
   return (
-    <div className="bg-[#F0FAFF] flex flex-col font-sans relative min-h-screen">
+    <div className="flex flex-col h-full bg-background overflow-y-auto pb-24">
       
       {/* Printing style overrides */}
       <style dangerouslySetInnerHTML={{ __html: `
@@ -92,26 +92,29 @@ export default function EmployeeSlipGaji() {
       `}} />
 
       {/* Header */}
-      <div className="bg-white border-b border-[#C8E8F5] shadow-sm">
-        <PageHeader title="Slip Gaji" onBack={() => navigate("/employee/profil")} />
+      <div className="p-4 border-b border-border bg-card sticky top-0 z-10 flex items-center gap-3">
+        <button onClick={() => navigate("/employee/profil")} className="p-1 rounded-md hover:bg-muted transition-colors">
+          <ChevronLeft size={20} />
+        </button>
+        <h2 className="font-semibold text-lg font-display">Slip Gaji</h2>
       </div>
 
       {/* Main content */}
-      <div className="p-6 flex-grow flex flex-col">
+      <div className="p-4 flex-1 flex flex-col">
         {loading ? (
-          <div className="flex-grow flex items-center justify-center py-20 text-[#8ABAC8] font-mono text-sm uppercase tracking-wider">
+          <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm font-medium py-10">
             Loading Slip Gaji...
           </div>
         ) : payrolls.length === 0 ? (
-          <div className="flex-grow flex flex-col items-center justify-center py-20 text-center text-[#8ABAC8] gap-3">
+          <div className="flex-1 flex flex-col items-center justify-center text-center text-muted-foreground gap-3 py-10">
             <FileText size={40} className="stroke-[1.2]" />
-            <div className="font-medium text-[14px]">Belum Ada Slip Gaji</div>
-            <div className="text-[12.5px] max-w-[200px] leading-relaxed">
+            <div className="font-medium text-sm">Belum Ada Slip Gaji</div>
+            <div className="text-xs max-w-[200px] leading-relaxed">
               Slip gaji bulanan Anda akan muncul di sini setelah diterbitkan oleh admin.
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-3.5 pb-20">
+          <div className="flex flex-col gap-3">
             {payrolls.map((slip) => {
               const isPaid = slip.status === "paid";
               return (
@@ -121,23 +124,23 @@ export default function EmployeeSlipGaji() {
                     setSelectedSlip(slip);
                     setShowDetail(true);
                   }}
-                  className="bg-white border border-[#C8E8F5] rounded-[20px] p-4.5 shadow-sm hover:border-[#8ABAC8] transition-all cursor-pointer flex items-center justify-between"
+                  className="bg-card border border-border rounded-xl p-4 shadow-sm hover:bg-muted/30 transition-colors cursor-pointer flex items-center justify-between"
                 >
-                  <div className="flex items-center gap-3.5">
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border ${
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                       isPaid 
-                        ? "bg-[#E2F0E8] border-[#3AAD7A]/30 text-[#3AAD7A]" 
-                        : "bg-[#FAF0E1] border-[#E89E3A]/30 text-[#E89E3A]"
+                        ? "bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400" 
+                        : "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"
                     }`}>
                       <FileText size={20} />
                     </div>
                     <div>
-                      <div className="font-['Syne'] text-[15.5px] font-bold text-[#1A3A4A] leading-tight">
+                      <div className="font-semibold text-sm">
                         {getPeriodLabel(slip.period)}
                       </div>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className={`text-[11px] font-bold uppercase tracking-[0.3px] px-2 py-0.5 rounded-full ${
-                          isPaid ? "bg-[#E2F0E8] text-[#3AAD7A]" : "bg-[#FAF0E1] text-[#E89E3A]"
+                      <div className="mt-1">
+                        <span className={`text-[10px] font-medium uppercase px-2 py-0.5 rounded-full ${
+                          isPaid ? "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400" : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400"
                         }`}>
                           {isPaid ? "Terbayar" : "Draft"}
                         </span>
@@ -145,10 +148,10 @@ export default function EmployeeSlipGaji() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="font-mono text-[15px] font-bold text-[#1A3A4A]">
+                    <div className="font-medium text-sm">
                       {formatCurrency(slip.net_salary)}
                     </div>
-                    <div className="text-[11px] text-[#8ABAC8] mt-0.5">Gaji Bersih</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">Gaji Bersih</div>
                   </div>
                 </div>
               );
@@ -160,63 +163,59 @@ export default function EmployeeSlipGaji() {
       {/* DETAIL MODAL / sliding drawer overlay */}
       <Dialog open={showDetail} onOpenChange={setShowDetail}>
         {selectedSlip && (
-          <DialogContent showCloseButton={false} className="w-full max-w-md bg-white border border-[#C8E8F5] rounded-[24px] p-0 overflow-hidden shadow-xl">
+          <DialogContent showCloseButton={false} className="w-[calc(100%-2rem)] max-w-md mx-auto bg-card border border-border rounded-2xl p-0 overflow-hidden shadow-xl">
             {/* Header */}
-            <div className="p-5 border-b border-[#F0FAFF] flex items-center justify-between">
+            <div className="p-4 border-b border-border flex items-center justify-between">
               <div>
-                <DialogTitle className="font-['Syne'] text-[17px] font-bold text-[#1A3A4A]">Rincian Gaji</DialogTitle>
-                <DialogDescription className="text-[12px] text-[#4A7A8A] mt-0.5">{getPeriodLabel(selectedSlip.period)}</DialogDescription>
+                <DialogTitle className="font-semibold text-lg font-display">Rincian Gaji</DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">{getPeriodLabel(selectedSlip.period)}</DialogDescription>
               </div>
               <DialogClose asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-8 h-8 cursor-pointer rounded-lg bg-[#F0FAFF] p-0"
-                >
+                <button className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors">
                   <X size={18} />
-                </Button>
+                </button>
               </DialogClose>
             </div>
 
             {/* Content */}
-            <div className="p-6 space-y-5 flex-grow overflow-y-auto text-left">
+            <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
               {/* Receipt Style Box */}
-              <div className="bg-[#F0FAFF] border border-[#C8E8F5] rounded-[20px] p-5">
-                <div className="text-[10.5px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono border-b border-[#C8E8F5] pb-2 mb-3">
+              <div className="bg-muted/30 border border-border rounded-xl p-4">
+                <div className="text-xs font-medium text-muted-foreground uppercase border-b border-border pb-2 mb-3">
                   Penerimaan & Potongan
                 </div>
-                <div className="space-y-3 text-[13.5px]">
+                <div className="space-y-2.5 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-[#4A7A8A]">Gaji Pokok</span>
-                    <span className="font-mono font-medium text-[#1A3A4A]">{formatCurrency(selectedSlip.basic_salary)}</span>
+                    <span className="text-muted-foreground">Gaji Pokok</span>
+                    <span className="font-medium">{formatCurrency(selectedSlip.basic_salary)}</span>
                   </div>
-                  <div className="flex justify-between text-[#3AAD7A]">
+                  <div className="flex justify-between text-green-600 dark:text-green-400">
                     <span>Insentif / Bonus</span>
-                    <span className="font-mono font-bold">+{formatCurrency(selectedSlip.incentives)}</span>
+                    <span className="font-medium">+{formatCurrency(selectedSlip.incentives)}</span>
                   </div>
-                  <div className="flex justify-between text-[#F87171]">
+                  <div className="flex justify-between text-red-600 dark:text-red-400">
                     <span>Potongan Kasbon</span>
-                    <span className="font-mono font-bold">-{formatCurrency(selectedSlip.kasbon_deduction)}</span>
+                    <span className="font-medium">-{formatCurrency(selectedSlip.kasbon_deduction)}</span>
                   </div>
                 </div>
-                <div className="border-t border-[#C8E8F5] pt-3 mt-4 flex justify-between items-center text-[15px] font-bold">
-                  <span className="text-[#1A3A4A]">GAJI BERSIH</span>
-                  <span className="font-mono text-[#F5A940]">{formatCurrency(selectedSlip.net_salary)}</span>
+                <div className="border-t border-border pt-3 mt-3 flex justify-between items-center text-sm font-semibold">
+                  <span>GAJI BERSIH</span>
+                  <span className="text-amber-500">{formatCurrency(selectedSlip.net_salary)}</span>
                 </div>
               </div>
 
               {/* Status Banner */}
               {selectedSlip.status === "paid" ? (
-                <div className="bg-[#E2F0E8] border border-[#3AAD7A]/30 rounded-[16px] p-3.5 flex gap-2.5 items-start">
-                  <CheckCircle size={18} className="text-[#3AAD7A] shrink-0 mt-0.5" />
-                  <div className="text-[12px] text-[#4A7A8A] leading-relaxed">
+                <div className="bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 rounded-xl p-3 flex gap-2 items-start">
+                  <CheckCircle size={16} className="text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+                  <div className="text-xs text-green-800 dark:text-green-300/90 leading-relaxed">
                     Pembayaran gaji bulan ini telah berhasil ditransfer dan dicairkan ke rekening Anda.
                   </div>
                 </div>
               ) : (
-                <div className="bg-[#FAF0E1] border border-[#E89E3A]/30 rounded-[16px] p-3.5 flex gap-2.5 items-start">
-                  <Clock size={18} className="text-[#E89E3A] shrink-0 mt-0.5" />
-                  <div className="text-[12px] text-[#4A7A8A] leading-relaxed">
+                <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl p-3 flex gap-2 items-start">
+                  <Clock size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-800 dark:text-amber-300/90 leading-relaxed">
                     Slip gaji masih berstatus Draft dan sedang diproses oleh bagian keuangan.
                   </div>
                 </div>
@@ -224,23 +223,19 @@ export default function EmployeeSlipGaji() {
             </div>
 
             {/* Actions */}
-            <div className="p-4 bg-[#F0FAFF] border-t border-[#C8E8F5] flex gap-2.5">
+            <div className="p-4 bg-muted/10 border-t border-border flex gap-3">
               <DialogClose asChild>
-                <Button
-                  variant="outline"
-                  className="flex-1 py-3 font-['Syne'] text-[14.5px] font-bold cursor-pointer bg-white text-[#1A3A4A] hover:bg-[#F0FAFF]"
-                >
+                <button className="flex-1 py-2.5 rounded-xl text-sm font-medium border border-border hover:bg-muted transition-colors">
                   Tutup
-                </Button>
+                </button>
               </DialogClose>
-              <Button
+              <button
                 onClick={() => handlePrint(selectedSlip)}
-                variant="orange"
-                className="flex-1 py-3 font-['Syne'] text-[14.5px] font-bold cursor-pointer flex items-center justify-center gap-1.5"
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
               >
                 <Printer size={16} />
-                Cetak Slip
-              </Button>
+                Cetak
+              </button>
             </div>
           </DialogContent>
         )}
@@ -249,55 +244,54 @@ export default function EmployeeSlipGaji() {
       {/* PRINT PAYSLIP TEMPLATE CONTAINER (Hidden on screen, styled for print only) */}
       {selectedSlip && (
         <div id="print-payslip-mobile" className="hidden">
-          <div className="max-w-xl mx-auto bg-white p-6 border border-[#C8E8F5] rounded-[20px] font-sans flex flex-col gap-5 text-[#1A3A4A]">
+          <div className="max-w-xl mx-auto bg-white p-6 border border-border rounded-xl font-sans flex flex-col gap-5 text-foreground">
             {/* Slip Header */}
-            <div className="border-b-2 border-[#1A3A4A] pb-3.5 flex justify-between items-end">
+            <div className="border-b-2 border-foreground pb-4 flex justify-between items-end">
               <div>
-                <h2 className="font-['Syne'] text-[20px] font-bold tracking-tight text-[#1A3A4A]">SLIP GAJI KARYAWAN</h2>
-                <p className="text-[11.5px] text-[#4A7A8A] mt-0.5">Klinik Hewan Dr. Meow / HadiR System</p>
+                <h2 className="text-xl font-bold tracking-tight text-foreground">SLIP GAJI KARYAWAN</h2>
+                <p className="text-xs text-muted-foreground mt-1">Klinik Hewan Dr. Meow / HadiR System</p>
               </div>
-              <div className="text-right text-[11px] font-mono">
+              <div className="text-right text-xs">
                 <div>Periode: {getPeriodLabel(selectedSlip.period)}</div>
-                <div className="text-neutral-400 mt-0.5">Cetak: {new Date().toLocaleDateString("id-ID")}</div>
+                <div className="text-muted-foreground mt-1">Cetak: {new Date().toLocaleDateString("id-ID")}</div>
               </div>
             </div>
 
             {/* Income & Deductions */}
-            <div className="grid grid-cols-2 gap-6 py-1">
+            <div className="grid grid-cols-2 gap-6 py-2">
               {/* Income */}
-              <div className="flex flex-col gap-2.5">
-                <h4 className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono border-b border-[#C8E8F5] pb-1">Penerimaan</h4>
-                <div className="flex flex-col text-[12.5px] gap-1.5">
-                  <div className="flex justify-between"><span className="text-[#4A7A8A]">Gaji Pokok</span><span className="font-mono">{formatCurrency(selectedSlip.basic_salary)}</span></div>
-                  <div className="flex justify-between text-[#3A6B1A] font-medium"><span>Insentif</span><span className="font-mono">+{formatCurrency(selectedSlip.incentives)}</span></div>
+              <div className="flex flex-col gap-3">
+                <h4 className="text-[10px] font-medium uppercase text-muted-foreground border-b border-border pb-1">Penerimaan</h4>
+                <div className="flex flex-col text-sm gap-2">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Gaji Pokok</span><span>{formatCurrency(selectedSlip.basic_salary)}</span></div>
+                  <div className="flex justify-between text-green-700 font-medium"><span>Insentif</span><span>+{formatCurrency(selectedSlip.incentives)}</span></div>
                 </div>
               </div>
 
               {/* Deductions */}
-              <div className="flex flex-col gap-2.5">
-                <h4 className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono border-b border-[#C8E8F5] pb-1">Potongan</h4>
-                <div className="flex flex-col text-[12.5px] gap-1.5">
-                  <div className="flex justify-between text-[#F87171] font-medium"><span>Potongan Kasbon</span><span className="font-mono">-{formatCurrency(selectedSlip.kasbon_deduction)}</span></div>
+              <div className="flex flex-col gap-3">
+                <h4 className="text-[10px] font-medium uppercase text-muted-foreground border-b border-border pb-1">Potongan</h4>
+                <div className="flex flex-col text-sm gap-2">
+                  <div className="flex justify-between text-red-700 font-medium"><span>Potongan Kasbon</span><span>-{formatCurrency(selectedSlip.kasbon_deduction)}</span></div>
                 </div>
               </div>
             </div>
 
             {/* Total Calculation */}
-            <div className="border-t-2 border-[#1A3A4A] pt-3.5 flex justify-between items-center bg-[#F0FAFF] -mx-6 px-6 py-3">
-              <span className="font-bold text-[13px] text-[#1A3A4A]">GAJI BERSIH DITERIMA</span>
-              <span className="font-['Syne'] text-[18px] font-bold text-[#F5A940] font-mono">
+            <div className="border-t-2 border-foreground pt-4 flex justify-between items-center bg-muted/30 -mx-6 px-6 py-4">
+              <span className="font-bold text-sm">GAJI BERSIH DITERIMA</span>
+              <span className="text-lg font-bold">
                 {formatCurrency(selectedSlip.net_salary)}
               </span>
             </div>
 
             {/* Footer Note */}
-            <div className="text-center text-[9.5px] text-[#8ABAC8] border-t border-dashed border-[#C8E8F5] pt-3.5 mt-2">
+            <div className="text-center text-[10px] text-muted-foreground border-t border-dashed border-border pt-4 mt-2">
               Dokumen ini sah diterbitkan secara elektronik oleh HadiR System.
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 }

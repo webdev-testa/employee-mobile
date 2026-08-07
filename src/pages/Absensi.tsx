@@ -3,7 +3,6 @@ import { supabase } from "@/lib/supabase";
 import {
   ChevronLeft,
   ChevronRight,
-  Calendar,
   MapPin,
   AlertTriangle,
   Send,
@@ -149,34 +148,34 @@ export default function EmployeeAbsensi() {
     const isFuture = dateStr > todayStr;
     const isHoliday = holidaysList.includes(dateStr);
 
+    if (dateStr === todayStr) {
+      return "bg-primary text-primary-foreground font-bold shadow-md shadow-primary/20";
+    }
+
     if (record) {
       const status = record.status;
-      if (status === "ontime") return "bg-[#E2F0E8] border border-[#3AAD7A]/30 text-[#3AAD7A]";
-      if (status === "late") return "bg-[#FAF0E1] border border-[#E89E3A]/30 text-[#E89E3A]";
-      if (status.includes("pending")) return "bg-sky-50 border border-sky-300/40 text-sky-500 animate-pulse";
-      if (status.includes("rejected")) return "bg-red-50 border border-red-200 text-red-400 line-through";
-      if (["cuti", "izin", "sakit"].includes(status)) return "bg-[#F0FAFF] border border-[#C8E8F5] text-[#4A7A8A]";
-      if (status === "absent") return "bg-[#F87171]/10 border border-[#F87171]/30 text-[#F87171]";
+      if (status === "ontime") return "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400 font-medium";
+      if (status === "late") return "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 font-medium";
+      if (status.includes("pending")) return "bg-sky-50 text-sky-500 animate-pulse font-medium";
+      if (status.includes("rejected")) return "bg-red-50 text-red-400 line-through font-medium";
+      if (["cuti", "izin", "sakit"].includes(status)) return "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-400 font-medium";
+      if (status === "absent") return "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400 font-medium";
     }
 
     if (isFuture) {
-      return "text-neutral-300 cursor-default";
+      return "text-muted-foreground/40 cursor-default";
     }
 
     if (isHoliday) {
-      return "bg-neutral-100 border border-neutral-200 text-neutral-400";
-    }
-
-    if (dateStr === todayStr) {
-      return "border-2 border-[#4DC8F5] text-[#4DC8F5] font-bold";
+      return "bg-muted text-muted-foreground cursor-default";
     }
 
     if (isWeekend) {
-      return "text-[#8ABAC8] hover:bg-[#F0FAFF]";
+      return "text-muted-foreground/40 hover:bg-muted";
     }
 
     // Weekday in the past with no record means absent
-    return "bg-[#F87171]/10 border border-[#F87171]/30 text-[#F87171]";
+    return "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400 font-medium";
   };
 
   // Stats summary calculations
@@ -185,7 +184,8 @@ export default function EmployeeAbsensi() {
   
   // Calculate count of absent past weekdays
   let countAbsent = 0;
-  let countCuti = recordsList.filter((r) => ["cuti", "izin", "sakit", "cuti_pending", "izin_pending", "sakit_pending"].includes(r.status)).length;
+  let countCuti = recordsList.filter((r) => ["cuti"].includes(r.status) || r.status === "cuti_pending").length;
+  let countIzinSakit = recordsList.filter((r) => ["izin", "sakit", "izin_pending", "sakit_pending"].includes(r.status)).length;
 
   calendarDays.forEach((cell) => {
     if (cell.day) {
@@ -383,147 +383,113 @@ export default function EmployeeAbsensi() {
 
   if (flowState === "form") {
     return (
-      <div className="flex flex-col min-h-screen bg-[#F0FAFF] font-sans">
-        {/* Header */}
-        <div className="bg-white border-b border-[#C8E8F5] shadow-sm">
-          <PageHeader title="Ajukan Cuti / Izin" onBack={() => setFlowState("list")} />
+      <div className="flex flex-col h-full bg-background overflow-y-auto">
+        <div className="flex items-center p-4 border-b border-border bg-card sticky top-0 z-10">
+          <button onClick={() => setFlowState("list")} className="p-2 -ml-2 text-muted-foreground hover:bg-muted rounded-md transition-colors">
+            <ChevronLeft size={20} />
+          </button>
+          <h2 className="font-semibold ml-2 text-lg font-display">Ajukan Cuti / Izin</h2>
         </div>
-
-        {/* Body */}
-        <form onSubmit={handleSubmitTimeOff} className="p-6 flex-1 flex flex-col justify-between">
-          <div className="space-y-4">
-            {/* Tipe Cuti */}
-            <div className="bg-white border border-[#C8E8F5] rounded-[18px] p-4 shadow-sm">
-              <label className="text-[11px] text-[#8ABAC8] uppercase tracking-[1px] font-mono mb-2.5 block">
-                Jenis Pengajuan
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(["cuti", "izin", "sakit"] as const).map((type) => (
-                  <Button
-                    key={type}
-                    type="button"
-                    onClick={() => setCutiType(type)}
-                    variant={cutiType === type ? "orange" : "secondary"}
-                    className={`py-3 rounded-[12px] font-bold font-['Syne'] text-[14px] capitalize ${
-                      cutiType === type
-                        ? "bg-[#F5A940]/10 border border-[#F5A940]/40 text-[#F5A940] shadow-none"
-                        : "bg-[#F0FAFF]/45 border-[#C8E8F5] text-[#4A7A8A] hover:bg-[#F0FAFF]"
-                    }`}
-                  >
-                    {type}
-                  </Button>
-                ))}
-              </div>
+        
+        <form onSubmit={handleSubmitTimeOff} className="p-6 space-y-5 pb-24">
+          <div>
+            <label className="block text-xs font-medium mb-2 text-foreground/80">Jenis Pengajuan</label>
+            <div className="flex bg-muted p-1 rounded-lg">
+              {(["cuti", "izin", "sakit"] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setCutiType(type)}
+                  className={`flex-1 py-2 rounded-md text-sm font-medium transition-all capitalize ${
+                    cutiType === type 
+                      ? "bg-background shadow-sm text-foreground" 
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
             </div>
+          </div>
 
-            {/* Tanggal */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white border border-[#C8E8F5] rounded-[18px] p-4 shadow-sm">
-                <label className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono mb-1.5 block">
-                  Mulai Tanggal
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  required
-                  className="w-full bg-transparent border-none outline-none font-mono text-[14px] text-[#1A3A4A]"
-                />
-              </div>
-              <div className="bg-white border border-[#C8E8F5] rounded-[18px] p-4 shadow-sm">
-                <label className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono mb-1.5 block">
-                  Sampai Tanggal
-                </label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  required
-                  className="w-full bg-transparent border-none outline-none font-mono text-[14px] text-[#1A3A4A]"
-                />
-              </div>
-            </div>
-
-            {/* Alasan */}
-            <div className="bg-white border border-[#C8E8F5] rounded-[18px] p-4 shadow-sm focus-within:border-[#8ABAC8] transition-colors">
-              <label className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono mb-1.5 block">
-                Alasan Pengajuan
-              </label>
-              <textarea
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Tuliskan keterangan detail di sini..."
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium mb-1.5 text-foreground/80">Mulai Tanggal</label>
+              <input 
+                type="date" 
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
                 required
-                rows={4}
-                className="w-full bg-transparent border-none outline-none font-sans text-[14px] text-[#1A3A4A] placeholder:text-[#8ABAC8] resize-none"
+                className="w-full bg-muted border border-transparent rounded-lg px-3 py-2.5 text-sm focus:border-primary focus:bg-background outline-none transition-all" 
               />
             </div>
+            <div>
+              <label className="block text-xs font-medium mb-1.5 text-foreground/80">Sampai Tanggal</label>
+              <input 
+                type="date" 
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                required
+                className="w-full bg-muted border border-transparent rounded-lg px-3 py-2.5 text-sm focus:border-primary focus:bg-background outline-none transition-all" 
+              />
+            </div>
+          </div>
 
-            {/* Lampiran / Attachment */}
-            <div className="bg-white border border-[#C8E8F5] rounded-[18px] p-4 shadow-sm">
-              <label className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono mb-2 block">
-                Lampiran / Dokumen Pendukung (Opsional)
+          <div>
+            <label className="block text-xs font-medium mb-1.5 text-foreground/80">Alasan Pengajuan</label>
+            <textarea 
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              required
+              className="w-full bg-muted border border-transparent rounded-lg px-3 py-3 text-sm min-h-[100px] focus:border-primary focus:bg-background outline-none transition-all"
+              placeholder="Tuliskan keterangan detail di sini..."
+            ></textarea>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium mb-1.5 text-foreground/80">Lampiran / Dokumen (Opsional)</label>
+            <div className="relative">
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                id="leave-attachment"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) setAttachment(file);
+                }}
+                disabled={loading || uploadingAttachment}
+              />
+              <label htmlFor="leave-attachment" className="border-2 border-dashed border-border rounded-lg p-6 flex flex-col items-center justify-center text-muted-foreground bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors">
+                <Paperclip size={24} className="mb-2 opacity-50" />
+                <span className="text-xs">{attachment ? attachment.name : "Upload Foto/PDF"}</span>
               </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  id="leave-attachment"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) setAttachment(file);
-                  }}
-                  disabled={loading || uploadingAttachment}
-                />
-                <label
-                  htmlFor="leave-attachment"
-                  className="px-4 py-2 border border-[#C8E8F5] rounded-[10px] text-[12.5px] font-medium text-[#4A7A8A] hover:bg-[#F0FAFF] cursor-pointer flex items-center gap-1.5 shadow-sm"
+              {attachment && (
+                <button 
+                  type="button" 
+                  onClick={() => setAttachment(null)} 
+                  className="absolute top-2 right-2 p-1 bg-red-100 text-red-600 rounded-md text-xs font-medium"
                 >
-                  <Paperclip size={14} />
-                  Pilih Berkas
-                </label>
-                <span className="text-[12px] text-[#8ABAC8] truncate max-w-[200px]">
-                  {attachment ? attachment.name : "Belum ada berkas dipilih"}
-                </span>
-                {attachment && (
-                  <button
-                    type="button"
-                    onClick={() => setAttachment(null)}
-                    className="text-[11px] text-[#F87171] hover:underline ml-auto"
-                    disabled={loading || uploadingAttachment}
-                  >
-                    Hapus
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="flex gap-3 items-start bg-amber-50 border border-[#FAF0E1] rounded-[16px] p-3.5">
-              <AlertTriangle size={18} className="text-[#E89E3A] shrink-0 mt-0.5" />
-              <div className="text-[12px] text-[#4A7A8A] leading-[1.5]">
-                Pengajuan cuti/izin memerlukan persetujuan Fara (Admin) dan otomatis memotong jatah libur kerja jika disetujui.
-              </div>
-            </div>
-          </div>
-
-          <div className="pt-6">
-            <Button
-              type="submit"
-              disabled={loading}
-              variant="orange"
-              className="w-full py-4 rounded-[18px] font-['Syne'] text-[18px] font-bold cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {loading ? (
-                "Memproses..."
-              ) : (
-                <>
-                  <Send size={18} />
-                  Kirim Pengajuan
-                </>
+                  Hapus
+                </button>
               )}
-            </Button>
+            </div>
           </div>
+
+          <div className="bg-amber-50 dark:bg-amber-500/10 p-3 rounded-lg border border-amber-100 dark:border-amber-500/20 text-amber-800 dark:text-amber-400 text-xs leading-relaxed flex gap-2">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <div>
+              Pengajuan cuti/izin memerlukan persetujuan Fara (Admin) dan otomatis memotong jatah libur kerja jika disetujui.
+            </div>
+          </div>
+
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-medium mt-2 flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors disabled:opacity-70"
+          >
+            {loading ? "Memproses..." : <><Send size={18} /> Kirim Pengajuan</>}
+          </button>
         </form>
       </div>
     );
@@ -531,27 +497,24 @@ export default function EmployeeAbsensi() {
 
   if (flowState === "success") {
     return (
-      <div className="flex flex-col items-center justify-center p-7 text-center min-h-screen bg-[#F0FAFF] font-sans">
-        <div className="w-[110px] h-[110px] rounded-full bg-[#FAF0E1] border-2 border-[#FAF0E1] flex items-center justify-center mb-6 relative">
-          <div className="absolute -inset-3 rounded-full border border-[#FAF0E1] opacity-40"></div>
-          <Send size={40} className="text-[#F5A940] ml-1" />
+      <div className="flex flex-col items-center justify-center p-7 text-center min-h-screen bg-background font-sans pb-24">
+        <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center mb-6">
+          <Send size={40} className="text-primary ml-1" />
         </div>
 
-        <div className="font-['Syne'] text-[26px] font-bold text-[#1A3A4A] mb-2 tracking-[-0.5px]">
-          Pengajuan Cuti Terkirim!
-        </div>
-        <div className="text-[13.5px] text-[#4A7A8A] mb-7 leading-[1.6]">
+        <h2 className="font-display text-2xl font-bold text-foreground mb-2">
+          Pengajuan Terkirim!
+        </h2>
+        <p className="text-sm text-muted-foreground mb-8 max-w-[250px]">
           Permohonan cuti / izin kamu telah berhasil dikirim dan sedang menunggu peninjauan dari admin.
-        </div>
+        </p>
 
-        <Button
+        <button
           onClick={() => setFlowState("list")}
-          variant="outline"
-          size="xl"
-          className="w-full cursor-pointer bg-white text-[#1A3A4A] hover:bg-[#F0FAFF]"
+          className="w-full py-3.5 bg-primary text-primary-foreground rounded-xl font-medium shadow-md shadow-primary/20 transition-all hover:bg-primary/90"
         >
           Kembali ke Absensi
-        </Button>
+        </button>
       </div>
     );
   }
@@ -785,9 +748,9 @@ export default function EmployeeAbsensi() {
       <div
         key={idx}
         onClick={() => isClickable && handleDayClick(cell.dateStr)}
-        className={`aspect-square rounded-[10px] flex items-center justify-center font-mono text-[13px] font-medium transition-all ${
-          isClickable ? "cursor-pointer hover:scale-105 active:scale-95" : ""
-        } ${statusClass}`}
+        className={`py-2 rounded-lg text-sm transition-all ${
+          isClickable && !statusClass.includes("cursor-default") ? "cursor-pointer hover:scale-105 active:scale-95" : ""
+        } ${statusClass} ${!cell.day ? 'bg-transparent' : ''}`}
       >
         {cell.day || ""}
       </div>
@@ -795,217 +758,147 @@ export default function EmployeeAbsensi() {
   });
 
   return (
-    <div className="bg-[#F0FAFF] flex flex-col font-sans relative min-h-screen">
+    <div className="flex flex-col h-full bg-background overflow-y-auto pb-24">
       {/* Page Header */}
-      <div className="p-6 pb-4 bg-white border-b border-[#C8E8F5] shadow-sm flex items-center justify-between">
-        <div>
-          <h1 className="font-['Syne'] text-[24px] font-bold text-[#1A3A4A] tracking-[-0.5px]">
-            Absensi
-          </h1>
-          <p className="text-[13px] text-[#4A7A8A]">Riwayat kehadiranmu</p>
-        </div>
-
-        {/* Month Navigation */}
-        <div className="flex items-center gap-1.5 bg-[#F0FAFF] border border-[#C8E8F5] rounded-xl p-1 shrink-0">
-          <Button
-            onClick={handlePrevMonth}
-            variant="outline"
-            size="sm"
-            className="w-7 h-7 p-0 flex items-center justify-center rounded-lg bg-white text-[#4A7A8A] hover:bg-[#F0FAFF]"
-          >
-            <ChevronLeft size={16} />
-          </Button>
-          <span className="font-mono text-[12px] font-bold text-[#1A3A4A] px-2 min-w-[76px] text-center uppercase">
-            {currentDate.toLocaleDateString("id-ID", { month: "short", year: "numeric" })}
-          </span>
-          <Button
-            onClick={handleNextMonth}
-            variant="outline"
-            size="sm"
-            className="w-7 h-7 p-0 flex items-center justify-center rounded-lg bg-white text-[#4A7A8A] hover:bg-[#F0FAFF]"
-          >
-            <ChevronRight size={16} />
-          </Button>
-        </div>
-      </div>
-
-      {/* Recap Stats */}
-      <div className="grid grid-cols-4 gap-2.5 px-6 pt-5">
-        <div className="bg-white border border-[#C8E8F5] rounded-[16px] p-3.5 text-center shadow-sm">
-          <div className="font-['Syne'] text-[22px] font-bold text-[#3AAD7A]">{countOntime}</div>
-          <div className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.5px] font-mono mt-1">Hadir</div>
-        </div>
-        <div className="bg-white border border-[#C8E8F5] rounded-[16px] p-3.5 text-center shadow-sm">
-          <div className="font-['Syne'] text-[22px] font-bold text-[#E89E3A]">{countLate}</div>
-          <div className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.5px] font-mono mt-1">Lambat</div>
-        </div>
-        <div className="bg-white border border-[#C8E8F5] rounded-[16px] p-3.5 text-center shadow-sm">
-          <div className="font-['Syne'] text-[22px] font-bold text-[#F87171]">{countAbsent}</div>
-          <div className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.5px] font-mono mt-1">Absen</div>
-        </div>
-        <div className="bg-white border border-[#C8E8F5] rounded-[16px] p-3.5 text-center shadow-sm">
-          <div className="font-['Syne'] text-[22px] font-bold text-[#4A7A8A]">{countCuti}</div>
-          <div className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.5px] font-mono mt-1">Cuti</div>
-        </div>
-      </div>
-
-      {/* Calendar Wrap */}
-      <div className="mx-6 mt-4 bg-white border border-[#C8E8F5] rounded-[24px] p-5 shadow-sm">
-        <div className="grid grid-cols-7 gap-1.5 mb-3">
-          {["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"].map((d) => (
-            <div key={d} className="text-center text-[10px] text-[#8ABAC8] uppercase tracking-[0.5px] font-mono font-bold">
-              {d}
-            </div>
-          ))}
-        </div>
-        
-        {loading ? (
-          <div className="h-[210px] flex items-center justify-center font-mono text-sm text-[#8ABAC8] uppercase">
-            Loading Calendar...
-          </div>
-        ) : (
-          <div className="grid grid-cols-7 gap-1.5">{calendarCells}</div>
-        )}
-
-        {/* Legend */}
-        <div className="flex flex-wrap gap-x-4 gap-y-2 mt-4 pt-3.5 border-t border-[#F0FAFF]">
-          <div className="flex items-center gap-1.5 text-[11px] text-[#4A7A8A]">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#3AAD7A]"></span> Tepat waktu
-          </div>
-          <div className="flex items-center gap-1.5 text-[11px] text-[#4A7A8A]">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#E89E3A]"></span> Terlambat
-          </div>
-          <div className="flex items-center gap-1.5 text-[11px] text-[#4A7A8A]">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#F87171]"></span> Tidak hadir
-          </div>
-          <div className="flex items-center gap-1.5 text-[11px] text-[#4A7A8A]">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#C8E8F5]"></span> Cuti/Izin
-          </div>
-        </div>
-      </div>
-
-      {/* Action to Request Cuti */}
-      <div className="px-6 mt-2 mb-2">
-        <Button
-          onClick={() => {
+      <div className="p-4 border-b border-border bg-card sticky top-0 z-10 flex justify-between items-center">
+        <h2 className="font-semibold text-lg font-display">Absensi</h2>
+        <button onClick={() => {
             setStartDate("");
             setEndDate("");
             setFlowState("form");
-          }}
-          variant="outline"
-          size="xl"
-          className="w-full cursor-pointer bg-[#FAF0E1] border-[#FAF0E1] text-[#E89E3A] hover:bg-[#FAF0E1]/80 hover:text-[#E89E3A]"
+          }} 
+          className="bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
         >
-          <Calendar size={18} />
-          Ajukan Cuti / Izin Kerja
-        </Button>
+          + Ajukan Cuti/Izin
+        </button>
       </div>
 
-      {/* Daily list header */}
-      <div className="px-6 pb-2.5 pt-2 flex items-center justify-between">
-        <span className="text-[12px] font-bold text-[#4A7A8A] uppercase tracking-[0.8px] font-mono">
-          Riwayat Harian
-        </span>
-      </div>
+      <div className="p-4">
+        {/* Navigation moved to calendar head directly */}
 
-      {/* Daily History List */}
-      <div className="px-6 pb-[92px] flex flex-col gap-2.5">
-        {loading ? (
-          <div className="bg-white border border-[#C8E8F5] rounded-[18px] p-6 text-center text-[#8ABAC8] text-[13px]">
-            Memuat data...
+        {/* Recap Stats */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          <div className="bg-green-50/80 dark:bg-green-500/10 border border-green-100 dark:border-green-500/20 rounded-xl py-2 flex flex-col items-center justify-center">
+            <span className="text-lg font-display font-bold text-green-700 dark:text-green-400">{countOntime}</span>
+            <span className="text-[10px] font-medium text-green-700/80 dark:text-green-400/80 text-center">Tepat Waktu</span>
           </div>
-        ) : recordsList.length === 0 ? (
-          <div className="bg-white border border-[#C8E8F5] rounded-[18px] p-6 text-center text-[#8ABAC8] text-[13px]">
-            Tidak ada riwayat absensi bulan ini
+          <div className="bg-amber-50/80 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20 rounded-xl py-2 flex flex-col items-center justify-center">
+            <span className="text-lg font-display font-bold text-amber-700 dark:text-amber-400">{countLate}</span>
+            <span className="text-[10px] font-medium text-amber-700/80 dark:text-amber-400/80 text-center">Terlambat</span>
           </div>
-        ) : (
-          recordsList.map((record) => {
-            const dateObj = new Date(record.date);
-            const dayNum = dateObj.getDate();
-            const dayName = dateObj.toLocaleDateString("id-ID", { weekday: "short" });
+          <div className="bg-cyan-50/80 dark:bg-cyan-500/10 border border-cyan-100 dark:border-cyan-500/20 rounded-xl py-2 flex flex-col items-center justify-center">
+            <span className="text-lg font-display font-bold text-cyan-700 dark:text-cyan-400">{countCuti}</span>
+            <span className="text-[10px] font-medium text-cyan-700/80 dark:text-cyan-400/80 text-center">Cuti</span>
+          </div>
+          <div className="bg-red-50/80 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-xl py-2 flex flex-col items-center justify-center">
+            <span className="text-lg font-display font-bold text-red-700 dark:text-red-400">{countAbsent}</span>
+            <span className="text-[10px] font-medium text-red-700/80 dark:text-red-400/80 text-center">Tidak Hadir</span>
+          </div>
+          <div className="bg-blue-50/80 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 rounded-xl py-2 flex flex-col items-center justify-center col-span-2">
+            <span className="text-lg font-display font-bold text-blue-700 dark:text-blue-400">{countIzinSakit}</span>
+            <span className="text-[10px] font-medium text-blue-700/80 dark:text-blue-400/80 text-center">Izin / Sakit</span>
+          </div>
+        </div>
 
-            const isCuti = ["cuti", "izin", "sakit", "cuti_pending", "izin_pending", "sakit_pending"].includes(record.status);
-            const isAbsent = record.status === "absent";
+        {/* Calendar Wrap */}
+        <div className="bg-card border border-border rounded-2xl p-4 mb-6 shadow-sm">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-medium text-sm">{currentDate.toLocaleDateString("id-ID", { month: "long", year: "numeric" })}</h3>
+            <div className="flex gap-2">
+              <button onClick={handlePrevMonth} className="p-1.5 rounded-md bg-muted"><ChevronRight className="rotate-180" size={16} /></button>
+              <button onClick={handleNextMonth} className="p-1.5 rounded-md bg-muted"><ChevronRight size={16} /></button>
+            </div>
+          </div>
+          <div className="grid grid-cols-7 gap-1 text-center text-xs mb-2 text-muted-foreground font-medium">
+            <div>M</div><div>S</div><div>S</div><div>R</div><div>K</div><div>J</div><div>S</div>
+          </div>
+          
+          {loading ? (
+            <div className="h-[210px] flex items-center justify-center text-sm text-muted-foreground">
+              Memuat...
+            </div>
+          ) : (
+            <div className="grid grid-cols-7 gap-1 text-center text-sm">{calendarCells}</div>
+          )}
+        </div>
 
-            return (
-              <div
-                key={record.id}
-                onClick={() => handleDayClick(record.date)}
-                className={`flex items-center gap-3 p-4 bg-white border border-[#C8E8F5] rounded-[18px] shadow-sm hover:border-[#8ABAC8] transition-all cursor-pointer ${
-                  isAbsent ? "border-[#F87171]/25 bg-[#F87171]/5" : ""
-                }`}
-              >
-                {/* Date Col */}
-                <div className="w-10 text-center shrink-0">
-                  <div className="font-['Syne'] text-[20px] font-bold text-[#1A3A4A] leading-none">
-                    {dayNum}
+        {/* Daily list header */}
+        <h4 className="text-sm font-semibold mb-3 text-muted-foreground">Riwayat Harian</h4>
+
+        {/* Daily History List */}
+        <div className="space-y-3">
+          {loading ? (
+            <div className="bg-card border border-border rounded-xl p-4 text-center text-muted-foreground text-sm">
+              Memuat data...
+            </div>
+          ) : recordsList.length === 0 ? (
+            <div className="bg-card border border-border rounded-xl p-4 text-center text-muted-foreground text-sm">
+              Tidak ada riwayat absensi bulan ini
+            </div>
+          ) : (
+            recordsList.map((record) => {
+              const dateObj = new Date(record.date);
+              const dayNum = dateObj.getDate();
+              const dayName = dateObj.toLocaleDateString("id-ID", { weekday: "short" });
+              const isCuti = ["cuti", "izin", "sakit", "cuti_pending", "izin_pending", "sakit_pending"].includes(record.status);
+              const isAbsent = record.status === "absent";
+              
+              let statusColor = "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400";
+              let statusText = "Tepat Waktu";
+              if (record.status === "late") {
+                  statusColor = "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400";
+                  statusText = "Terlambat";
+              } else if (isAbsent) {
+                  statusColor = "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400";
+                  statusText = "Tidak Hadir";
+              } else if (isCuti) {
+                  statusColor = "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400";
+                  statusText = "Cuti/Izin";
+                  if (record.status.includes("pending")) statusText = "Menunggu";
+              }
+
+              return (
+                <div
+                  key={record.id}
+                  onClick={() => handleDayClick(record.date)}
+                  className="bg-card border border-border rounded-xl p-4 flex items-center gap-4 shadow-sm hover:bg-muted/30 transition-colors cursor-pointer"
+                >
+                  <div className="w-12 text-center shrink-0">
+                    <div className="font-display text-xl font-bold">{dayNum}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase font-medium">{dayName}</div>
                   </div>
-                  <div className="text-[10.5px] text-[#8ABAC8] font-mono uppercase tracking-[0.5px] mt-1">
-                    {dayName}
-                  </div>
-                </div>
-
-                <div className="w-[1px] h-9 bg-[#C8E8F5] shrink-0"></div>
-
-                {/* Info Col */}
-                <div className="flex-1 min-w-0">
-                  {isAbsent ? (
-                    <div className="text-[13.5px] font-bold text-[#F87171]">Tidak Hadir</div>
-                  ) : isCuti ? (
-                    <div className="text-[13.5px] font-bold text-[#4A7A8A] truncate">
-                      {getStatusLabel(record.status)}
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${record.status === "late" ? "bg-[#E89E3A]" : "bg-[#3AAD7A]"}`}></span>
-                        <span className="font-mono text-[13px] font-medium text-[#1A3A4A]">
-                          {formatTime(record.clock_in_time)}
-                        </span>
-                        <span className="text-[11px] text-[#8ABAC8]">masuk</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-neutral-300"></span>
-                        <span className="font-mono text-[13px] font-medium text-[#1A3A4A]">
-                          {formatTime(record.clock_out_time)}
-                        </span>
-                        <span className="text-[11px] text-[#8ABAC8]">pulang</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Right Badge Col */}
-                <div className="text-right shrink-0">
-                  {isAbsent ? (
-                    <span className="inline-flex px-2.5 py-1 rounded-full text-[10.5px] font-bold bg-[#F87171]/10 text-[#F87171] uppercase tracking-[0.3px]">
-                      ✕ Absen
-                    </span>
-                  ) : isCuti ? (
-                    <span className={`inline-flex px-2.5 py-1 rounded-full text-[10.5px] font-bold uppercase tracking-[0.3px] ${
-                      record.status.includes("pending") ? "bg-sky-50 text-sky-500 border border-sky-300/30" : "bg-[#F0FAFF] text-[#4A7A8A]"
-                    }`}>
-                      {record.status.includes("pending") ? "⏳ Pending" : "✓ Cuti"}
-                    </span>
-                  ) : (
-                    <div className="flex flex-col items-end gap-1.5">
-                      {record.clock_in_time && record.clock_out_time && (
-                        <div className="text-[11.5px] text-[#4A7A8A] font-mono">
-                          {calculateWorkDuration(record.clock_in_time, record.clock_out_time)}
+                  
+                  <div className="w-[1px] h-10 bg-border shrink-0"></div>
+                  
+                  <div className="flex-1 min-w-0">
+                    {isAbsent ? (
+                      <div className="text-sm font-bold text-destructive">Tidak Hadir</div>
+                    ) : isCuti ? (
+                      <div className="text-sm font-bold text-muted-foreground">{getStatusLabel(record.status)}</div>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium">{formatTime(record.clock_in_time)}</span>
+                          <span className="text-xs text-muted-foreground">masuk</span>
                         </div>
-                      )}
-                      <span className={`inline-flex px-2.5 py-1 rounded-full text-[10.5px] font-bold uppercase tracking-[0.3px] ${
-                        record.status === "late" ? "bg-[#FAF0E1] text-[#E89E3A]" : "bg-[#E2F0E8] text-[#3AAD7A]"
-                      }`}>
-                        {record.status === "late" ? "⚠ Late" : "✓ On Time"}
-                      </span>
-                    </div>
-                  )}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium">{formatTime(record.clock_out_time)}</span>
+                          <span className="text-xs text-muted-foreground">pulang</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="text-right shrink-0">
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${statusColor}`}>
+                      {statusText}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            );
-          })
-        )}
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );
