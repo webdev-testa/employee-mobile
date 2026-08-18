@@ -9,58 +9,58 @@ export function AttendanceStatusBadge({ status, className }: AttendanceStatusBad
   const getStatusStyle = (status: string) => {
     switch (status) {
       case "ontime":
-        return "bg-status-success-bg text-status-success border-transparent font-medium"
+        return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 font-semibold"
       case "late":
-        return "bg-status-warning-bg text-status-warning border-transparent font-medium"
+        return "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 font-semibold"
       case "absent":
-        return "bg-status-danger/10 text-status-danger border-transparent font-medium"
+        return "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30 font-semibold"
       case "weekend":
-        return "bg-neutral-100 text-neutral-400 border-transparent font-medium"
+        return "bg-slate-500/10 text-slate-500 dark:text-slate-400 border-slate-500/20 font-medium"
       case "cuti":
       case "izin":
       case "sakit":
-        return "bg-status-info-bg text-status-info border-status-info-border font-medium"
+        return "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30 font-semibold"
       case "cuti_pending":
       case "izin_pending":
       case "sakit_pending":
-        return "bg-status-info-bg text-status-info border-status-info-border opacity-80 font-medium"
+        return "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 animate-pulse font-semibold"
       case "cuti_rejected":
       case "izin_rejected":
       case "sakit_rejected":
-        return "bg-status-danger/10 text-status-danger border-status-danger/20 font-medium"
+        return "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30 line-through font-semibold"
       default:
-        return "bg-status-neutral-bg text-status-neutral border-transparent font-medium"
+        return "bg-muted text-muted-foreground border-border font-medium"
     }
   }
 
   const getStatusLabel = (status: string) => {
     switch (status) {
       case "ontime":
-        return "Tepat Waktu"
+        return "✓ Tepat Waktu"
       case "late":
-        return "Terlambat"
+        return "⏱ Terlambat"
       case "absent":
-        return "Tidak Hadir"
+        return "✗ Tidak Hadir"
       case "weekend":
         return "Weekend"
       case "cuti":
-        return "Cuti"
+        return "🌴 Cuti"
       case "izin":
-        return "Izin"
+        return "📝 Izin"
       case "sakit":
-        return "Sakit"
+        return "🩺 Sakit"
       case "cuti_pending":
-        return "Cuti (Menunggu)"
+        return "⏳ Cuti (Menunggu)"
       case "izin_pending":
-        return "Izin (Menunggu)"
+        return "⏳ Izin (Menunggu)"
       case "sakit_pending":
-        return "Sakit (Menunggu)"
+        return "⏳ Sakit (Menunggu)"
       case "cuti_rejected":
-        return "Cuti Ditolak"
+        return "✗ Cuti Ditolak"
       case "izin_rejected":
-        return "Izin Ditolak"
+        return "✗ Izin Ditolak"
       case "sakit_rejected":
-        return "Sakit Ditolak"
+        return "✗ Sakit Ditolak"
       default:
         return status
     }
@@ -69,7 +69,7 @@ export function AttendanceStatusBadge({ status, className }: AttendanceStatusBad
   return (
     <Badge
       variant="outline"
-      className={`${getStatusStyle(status)} ${className || ""}`}
+      className={`rounded-full px-2.5 py-0.5 text-xs shadow-2xs ${getStatusStyle(status)} ${className || ""}`}
     >
       {getStatusLabel(status)}
     </Badge>
@@ -85,15 +85,15 @@ export function KasbonStatusBadge({ status, className }: KasbonStatusBadgeProps)
   const getStyle = (status: string) => {
     switch (status) {
       case 'pending':
-        return "bg-status-warning-bg text-status-warning hover:bg-status-warning-bg shadow-none border-transparent font-medium"
+        return "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 font-semibold"
       case 'approved':
-        return "bg-status-success-bg text-status-success hover:bg-status-success-bg shadow-none border-transparent font-medium"
+        return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 font-semibold"
       case 'deducted':
-        return "bg-status-info-bg text-status-info hover:bg-status-info-bg shadow-none border-status-info-border font-medium"
+        return "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 font-semibold"
       case 'rejected':
-        return "bg-status-danger/10 text-status-danger hover:bg-status-danger/10 shadow-none border-transparent font-medium"
+        return "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30 font-semibold"
       default:
-        return "bg-status-neutral-bg text-status-neutral border-transparent font-medium"
+        return "bg-muted text-muted-foreground border-border font-medium"
     }
   }
 
@@ -104,7 +104,7 @@ export function KasbonStatusBadge({ status, className }: KasbonStatusBadgeProps)
       case 'approved':
         return "✓ Disetujui"
       case 'deducted':
-        return "Dipotong"
+        return "💳 Dipotong"
       case 'rejected':
         return "✗ Ditolak"
       default:
@@ -115,7 +115,7 @@ export function KasbonStatusBadge({ status, className }: KasbonStatusBadgeProps)
   return (
     <Badge
       variant="outline"
-      className={`${getStyle(status)} ${className || ""}`}
+      className={`rounded-full px-2.5 py-0.5 text-xs shadow-2xs ${getStyle(status)} ${className || ""}`}
     >
       {getLabel(status)}
     </Badge>

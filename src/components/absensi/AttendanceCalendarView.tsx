@@ -58,24 +58,24 @@ export function AttendanceCalendarView({
     const isHoliday = holidaysList.includes(dateStr);
 
     if (dateStr === todayStr) {
-      return "bg-primary text-primary-foreground font-bold shadow-md shadow-primary/20";
+      return "bg-emerald-600 text-white font-bold shadow-xs scale-105";
     }
 
     if (record) {
       const status = record.status;
-      if (status === "ontime") return "bg-status-success-bg text-status-success font-medium";
-      if (status === "late") return "bg-status-warning-bg text-status-warning font-medium";
-      if (status.includes("pending")) return "bg-status-info-bg text-status-info animate-pulse font-medium";
-      if (status.includes("rejected")) return "bg-status-danger/10 text-status-danger line-through font-medium";
-      if (["cuti", "izin", "sakit"].includes(status)) return "bg-status-info-bg text-status-info font-medium";
-      if (status === "absent") return "bg-status-danger/10 text-status-danger font-medium";
+      if (status === "ontime") return "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 font-bold border border-emerald-500/25";
+      if (status === "late") return "bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold border border-amber-500/25";
+      if (status.includes("pending")) return "bg-indigo-500/15 text-indigo-800 dark:text-indigo-300 border border-indigo-500/25 animate-pulse font-bold";
+      if (status.includes("rejected")) return "bg-rose-500/15 text-rose-800 dark:text-rose-300 border border-rose-500/25 line-through font-bold";
+      if (["cuti", "izin", "sakit"].includes(status)) return "bg-sky-500/15 text-sky-800 dark:text-sky-300 font-bold border border-sky-500/25";
+      if (status === "absent") return "bg-rose-500/15 text-rose-800 dark:text-rose-300 font-bold border border-rose-500/25";
     }
 
-    if (isFuture) return "text-muted-foreground/40 cursor-default";
-    if (isHoliday) return "bg-muted text-muted-foreground cursor-default";
+    if (isFuture) return "text-muted-foreground/30 cursor-default";
+    if (isHoliday) return "bg-amber-500/10 text-amber-700 dark:text-amber-400 font-medium cursor-default";
     if (isWeekend) return "text-muted-foreground/40 hover:bg-muted";
 
-    return "bg-status-danger/10 text-status-danger font-medium";
+    return "bg-rose-500/10 text-rose-700 dark:text-rose-300 font-bold border border-rose-500/20";
   };
 
   // Stats calculation
@@ -106,38 +106,38 @@ export function AttendanceCalendarView({
   return (
     <div className="space-y-4">
       {/* Calendar Header */}
-      <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm space-y-4">
+      <div className="bg-card border border-border/80 rounded-3xl p-4 shadow-xs space-y-4">
         <div className="flex items-center justify-between">
           <button
             onClick={onPrevMonth}
             aria-label="Bulan Sebelumnya"
-            className="h-10 w-10 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent rounded-xl transition-colors"
+            className="h-9 w-9 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-colors"
           >
             <ChevronLeft size={20} />
           </button>
-          <div className="font-display font-bold text-base text-foreground capitalize">
-            {monthYearLabel}
+          <div className="font-display font-bold text-sm text-foreground capitalize px-3 py-1 rounded-full bg-muted border border-border/60">
+            📅 {monthYearLabel}
           </div>
           <button
             onClick={onNextMonth}
             aria-label="Bulan Berikutnya"
-            className="h-10 w-10 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent rounded-xl transition-colors"
+            className="h-9 w-9 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-colors"
           >
             <ChevronRight size={20} />
           </button>
         </div>
 
         {/* Day Header */}
-        <div className="grid grid-cols-7 text-center text-[11px] font-semibold text-muted-foreground">
+        <div className="grid grid-cols-7 text-center text-[11px] font-bold text-muted-foreground">
           {["Ming", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"].map((day, idx) => (
-            <div key={day} className={idx === 0 || idx === 6 ? "text-status-danger/70" : ""}>
+            <div key={day} className={idx === 0 || idx === 6 ? "text-rose-500 font-extrabold" : ""}>
               {day}
             </div>
           ))}
         </div>
 
         {/* Grid Cells */}
-        <div className="grid grid-cols-7 gap-1 text-center">
+        <div className="grid grid-cols-7 gap-1.5 text-center">
           {calendarDays.map((cell, idx) => {
             if (!cell.day) {
               return <div key={`empty-${idx}`} className="h-9" />;
@@ -160,23 +160,23 @@ export function AttendanceCalendarView({
         </div>
       </div>
 
-      {/* Monthly Summary Statistics */}
+      {/* Monthly Summary Statistics (Clean Flat Tint Cards) */}
       <div className="grid grid-cols-4 gap-2 text-center">
-        <div className="bg-status-success-bg/60 border border-status-success/20 p-2.5 rounded-xl">
-          <div className="text-[10px] text-muted-foreground font-medium">Hadir</div>
-          <div className="font-bold text-sm text-status-success">{countOntime}</div>
+        <div className="bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-2xl">
+          <div className="text-[10px] text-emerald-800 dark:text-emerald-300 font-bold mb-0.5">✓ Hadir</div>
+          <div className="font-extrabold text-base text-emerald-700 dark:text-emerald-300 financial-num">{countOntime}</div>
         </div>
-        <div className="bg-status-warning-bg/60 border border-status-warning/20 p-2.5 rounded-xl">
-          <div className="text-[10px] text-muted-foreground font-medium">Telat</div>
-          <div className="font-bold text-sm text-status-warning">{countLate}</div>
+        <div className="bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-2xl">
+          <div className="text-[10px] text-amber-800 dark:text-amber-300 font-bold mb-0.5">⏱ Telat</div>
+          <div className="font-extrabold text-base text-amber-700 dark:text-amber-300 financial-num">{countLate}</div>
         </div>
-        <div className="bg-status-danger/10 border border-status-danger/20 p-2.5 rounded-xl">
-          <div className="text-[10px] text-muted-foreground font-medium">Absen</div>
-          <div className="font-bold text-sm text-status-danger">{countAbsent}</div>
+        <div className="bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-2xl">
+          <div className="text-[10px] text-rose-800 dark:text-rose-300 font-bold mb-0.5">✗ Absen</div>
+          <div className="font-extrabold text-base text-rose-700 dark:text-rose-300 financial-num">{countAbsent}</div>
         </div>
-        <div className="bg-status-info-bg/60 border border-status-info-border p-2.5 rounded-xl">
-          <div className="text-[10px] text-muted-foreground font-medium">Cuti/Izin</div>
-          <div className="font-bold text-sm text-status-info">{countCuti + countIzinSakit}</div>
+        <div className="bg-sky-500/10 border border-sky-500/20 p-2.5 rounded-2xl">
+          <div className="text-[10px] text-sky-800 dark:text-sky-300 font-bold mb-0.5">🌴 Izin/Cuti</div>
+          <div className="font-extrabold text-base text-sky-700 dark:text-sky-300 financial-num">{countCuti + countIzinSakit}</div>
         </div>
       </div>
     </div>

@@ -1,7 +1,14 @@
 import { Link, useLocation, Outlet } from 'react-router-dom'
 import { Clock, Calendar, Wallet, User } from 'lucide-react'
 
-function NavTab({ to, icon: Icon, label }: { to: string; icon: React.ElementType; label: string }) {
+interface NavTabProps {
+  to: string
+  icon: React.ElementType
+  label: string
+  activeColorClass: string
+}
+
+function NavTab({ to, icon: Icon, label, activeColorClass }: NavTabProps) {
   const location = useLocation()
   const isActive = location.pathname === to || (to !== '/employee' && location.pathname.startsWith(to))
   
@@ -9,10 +16,10 @@ function NavTab({ to, icon: Icon, label }: { to: string; icon: React.ElementType
     <Link
       to={to}
       aria-current={isActive ? 'page' : undefined}
-      className={`min-h-[44px] min-w-[44px] px-3 py-1.5 flex flex-col items-center justify-center gap-1 rounded-xl transition-all ${
+      className={`min-h-[44px] min-w-[44px] px-3.5 py-1.5 flex flex-col items-center justify-center gap-1 rounded-2xl transition-all duration-200 ${
         isActive 
-          ? 'text-primary font-semibold bg-primary/10' 
-          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+          ? `${activeColorClass} font-semibold shadow-xs scale-[1.03]` 
+          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
       }`}
     >
       <Icon className="w-5 h-5 shrink-0" />
@@ -36,10 +43,10 @@ export function EmployeeLayout() {
           aria-label="Main employee navigation"
           className="absolute bottom-0 left-0 w-full bg-card/95 backdrop-blur-md border-t border-border/80 flex justify-around items-center px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-50 shadow-lg"
         >
-          <NavTab to="/employee/home" icon={Clock} label="Home" />
-          <NavTab to="/employee/absensi" icon={Calendar} label="Absensi" />
-          <NavTab to="/employee/kasbon" icon={Wallet} label="Kasbon" />
-          <NavTab to="/employee/profil" icon={User} label="Profil" />
+          <NavTab to="/employee/home" icon={Clock} label="Home" activeColorClass="text-emerald-700 bg-emerald-500/15 dark:text-emerald-300 dark:bg-emerald-500/20" />
+          <NavTab to="/employee/absensi" icon={Calendar} label="Absensi" activeColorClass="text-blue-700 bg-blue-500/15 dark:text-blue-300 dark:bg-blue-500/20" />
+          <NavTab to="/employee/kasbon" icon={Wallet} label="Kasbon" activeColorClass="text-amber-700 bg-amber-500/15 dark:text-amber-300 dark:bg-amber-500/20" />
+          <NavTab to="/employee/profil" icon={User} label="Profil" activeColorClass="text-purple-700 bg-purple-500/15 dark:text-purple-300 dark:bg-purple-500/20" />
         </nav>
       </div>
     </div>

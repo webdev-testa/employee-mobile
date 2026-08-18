@@ -107,30 +107,32 @@ export default function EmployeeProfil() {
     return (
       <div className="flex flex-col h-full bg-background overflow-y-auto pb-24">
         {/* Header */}
-        <div className="flex items-center p-4 border-b border-border bg-card sticky top-0 z-10">
-          <button onClick={() => setView("menu")} className="p-2 -ml-2 text-muted-foreground hover:bg-muted rounded-md transition-colors">
+        <div className="flex items-center p-4 border-b border-border/80 bg-card sticky top-0 z-10 shadow-2xs">
+          <button onClick={() => setView("menu")} className="p-2 -ml-2 text-muted-foreground hover:bg-muted rounded-xl transition-colors">
             <ChevronLeft size={20} />
           </button>
-          <h2 className="font-semibold ml-2 text-lg font-display">Detail Profil</h2>
+          <h2 className="font-bold ml-2 text-lg font-display tracking-tight">Detail Profil Karyawan</h2>
         </div>
 
-        <div className="p-6">
+        <div className="p-5 space-y-6">
           {/* Avatar Section */}
-          <div className="flex flex-col items-center mb-8">
-            <div className="relative mb-4">
-              <div className="w-24 h-24 rounded-full bg-muted border-4 border-background shadow-md overflow-hidden flex items-center justify-center text-muted-foreground">
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
-                ) : (
-                  <User size={40} />
-                )}
-                {uploading && (
-                  <div className="absolute inset-0 bg-background/50 flex items-center justify-center">
-                    <Loader2 size={24} className="animate-spin text-primary" />
-                  </div>
-                )}
+          <div className="flex flex-col items-center pt-2">
+            <div className="relative mb-3">
+              <div className="w-24 h-24 rounded-full p-1 bg-muted border border-border/80 shadow-xs">
+                <div className="w-full h-full rounded-full bg-muted overflow-hidden flex items-center justify-center text-muted-foreground">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <User size={38} />
+                  )}
+                  {uploading && (
+                    <div className="absolute inset-0 bg-background/60 flex items-center justify-center rounded-full">
+                      <Loader2 size={24} className="animate-spin text-primary" />
+                    </div>
+                  )}
+                </div>
               </div>
-              <label htmlFor="avatar-upload" className="absolute bottom-0 right-0 w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-lg cursor-pointer hover:bg-primary/90 transition-colors">
+              <label htmlFor="avatar-upload" className="absolute bottom-0 right-0 w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center shadow-xs cursor-pointer hover:scale-105 active:scale-95 transition-all">
                 <Camera size={14} />
               </label>
               <input 
@@ -142,30 +144,30 @@ export default function EmployeeProfil() {
                 disabled={uploading}
               />
             </div>
-            <h3 className="font-bold text-xl">{userName}</h3>
-            <p className="text-sm text-muted-foreground">{jobTitle}</p>
+            <h3 className="font-bold text-xl tracking-tight">{userName}</h3>
+            <span className="text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-500/15 border border-purple-500/20 px-3 py-0.5 rounded-full mt-1">{jobTitle}</span>
           </div>
 
           {/* Details Form / List */}
-          <div className="bg-card border border-border rounded-2xl p-5 shadow-sm space-y-5">
+          <div className="bg-card border border-border/80 rounded-3xl p-5 shadow-xs space-y-4">
             <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Email</label>
-              <div className="font-medium">{userEmail}</div>
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">Email</label>
+              <div className="font-semibold text-sm text-foreground">{userEmail}</div>
             </div>
-            <div className="h-px bg-border -mx-5"></div>
+            <div className="h-px bg-border/80 -mx-5"></div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">No. Handphone</label>
-              <div className="font-medium">{phone}</div>
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">No. Handphone</label>
+              <div className="font-semibold text-sm text-foreground">{phone}</div>
             </div>
-            <div className="h-px bg-border -mx-5"></div>
+            <div className="h-px bg-border/80 -mx-5"></div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Departemen</label>
-              <div className="font-medium">{department}</div>
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">Departemen</label>
+              <div className="font-semibold text-sm text-foreground">{department}</div>
             </div>
-            <div className="h-px bg-border -mx-5"></div>
+            <div className="h-px bg-border/80 -mx-5"></div>
             <div>
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Tanggal Bergabung</label>
-              <div className="font-medium">{joinDate}</div>
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1">Tanggal Bergabung</label>
+              <div className="font-semibold text-sm text-foreground">{joinDate}</div>
             </div>
           </div>
         </div>
@@ -176,72 +178,84 @@ export default function EmployeeProfil() {
   return (
     <div className="flex flex-col h-full bg-background overflow-y-auto pb-24">
       {/* Header */}
-      <div className="p-4 border-b border-border bg-card sticky top-0 z-10">
-        <h2 className="font-semibold text-lg font-display">Profil</h2>
-        <p className="text-xs text-muted-foreground">Pengaturan akun dan preferensi</p>
+      <div className="p-4 border-b border-border/80 bg-card sticky top-0 z-10 shadow-2xs">
+        <h2 className="font-bold text-lg font-display tracking-tight">Profil & Pengaturan</h2>
+        <p className="text-xs text-muted-foreground">Kelola akun dan informasi pekerjaan</p>
       </div>
 
-      <div className="p-4">
+      <div className="p-4 space-y-4">
         {/* Profile Card */}
         <div 
           onClick={() => setView("detail")}
-          className="bg-card border border-border p-4 rounded-2xl mb-6 shadow-sm flex items-center gap-4 cursor-pointer hover:border-primary/50 transition-colors"
+          className="bg-card border border-border/80 p-4 rounded-3xl shadow-xs flex items-center gap-4 cursor-pointer hover:border-border transition-all active:scale-[0.99]"
         >
-          <div className="w-14 h-14 bg-muted rounded-full flex items-center justify-center text-muted-foreground overflow-hidden">
+          <div className="w-13 h-13 rounded-full bg-muted border border-border/80 flex items-center justify-center text-muted-foreground overflow-hidden shrink-0">
             {avatarUrl ? (
               <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" />
             ) : (
-              <User size={28} />
+              <User size={26} />
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-lg truncate">{userName}</h3>
-            <p className="text-sm text-muted-foreground truncate">{userEmail}</p>
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <h3 className="font-bold text-base truncate">{userName}</h3>
+              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 px-2 py-0.5 rounded-full">Aktif</span>
+            </div>
+            <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
           </div>
           <ChevronRight size={20} className="text-muted-foreground shrink-0" />
         </div>
 
-        {/* Menus */}
-        <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden mb-6">
+        {/* Menus (Colorful Categories) */}
+        <div className="bg-card border border-border/80 rounded-3xl shadow-xs overflow-hidden divide-y divide-border/70">
           <button 
             onClick={() => navigate("/employee/slip-gaji")}
-            className="w-full p-4 flex items-center justify-between border-b border-border hover:bg-muted/50 transition-colors text-left"
+            className="w-full p-4 flex items-center justify-between hover:bg-muted/40 transition-colors text-left"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-                <FileText size={16} />
+            <div className="flex items-center gap-3.5">
+              <div className="w-9 h-9 rounded-xl bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/25 flex items-center justify-center shrink-0">
+                <FileText size={18} />
               </div>
-              <span className="font-medium text-sm">Slip Gaji</span>
+              <div>
+                <span className="font-bold text-sm text-foreground block">Slip Gaji Digital</span>
+                <span className="text-[11px] text-muted-foreground">Lihat rincian gaji bulanan</span>
+              </div>
             </div>
-            <ChevronRight size={18} className="text-muted-foreground" />
+            <ChevronRight size={18} className="text-muted-foreground/60" />
           </button>
-          <button className="w-full p-4 flex items-center justify-between border-b border-border hover:bg-muted/50 transition-colors text-left">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-                <Settings size={16} />
+          <button className="w-full p-4 flex items-center justify-between hover:bg-muted/40 transition-colors text-left">
+            <div className="flex items-center gap-3.5">
+              <div className="w-9 h-9 rounded-xl bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/25 flex items-center justify-center shrink-0">
+                <Settings size={18} />
               </div>
-              <span className="font-medium text-sm">Pengaturan</span>
+              <div>
+                <span className="font-bold text-sm text-foreground block">Pengaturan Akun</span>
+                <span className="text-[11px] text-muted-foreground">Ubah password & preferensi</span>
+              </div>
             </div>
-            <ChevronRight size={18} className="text-muted-foreground" />
+            <ChevronRight size={18} className="text-muted-foreground/60" />
           </button>
-          <button className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors text-left">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-                <HelpCircle size={16} />
+          <button className="w-full p-4 flex items-center justify-between hover:bg-muted/40 transition-colors text-left">
+            <div className="flex items-center gap-3.5">
+              <div className="w-9 h-9 rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/25 flex items-center justify-center shrink-0">
+                <HelpCircle size={18} />
               </div>
-              <span className="font-medium text-sm">Bantuan & Dukungan</span>
+              <div>
+                <span className="font-bold text-sm text-foreground block">Bantuan & CS</span>
+                <span className="text-[11px] text-muted-foreground">Pusat bantuan karyawan</span>
+              </div>
             </div>
-            <ChevronRight size={18} className="text-muted-foreground" />
+            <ChevronRight size={18} className="text-muted-foreground/60" />
           </button>
         </div>
 
         {/* Logout */}
         <button 
           onClick={handleLogout}
-          className="w-full bg-destructive/10 text-destructive py-3.5 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-destructive/20 transition-colors"
+          className="w-full bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-600 dark:text-rose-400 py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-98"
         >
           <LogOut size={18} />
-          Keluar
+          Keluar dari Akun
         </button>
       </div>
     </div>

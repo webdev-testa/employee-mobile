@@ -21,18 +21,18 @@ export function PageHeader({ title, onBack, disabled = false }: PageHeaderProps)
   }
 
   return (
-    <div className="p-6 pt-[calc(1.5rem+env(safe-area-inset-top,0px))] pb-5 flex items-center gap-3.5 select-none">
+    <div className="p-5 pt-[calc(1.25rem+env(safe-area-inset-top,0px))] pb-4 flex items-center gap-3.5 select-none bg-card/60 backdrop-blur-md border-b border-border/60 sticky top-0 z-20">
       <Button
         onClick={handleBack}
         disabled={disabled}
         variant="outline"
         size="icon"
         aria-label="Go back"
-        className="h-11 w-11 min-h-[44px] min-w-[44px] cursor-pointer disabled:opacity-50 rounded-xl"
+        className="h-10 w-10 min-h-[44px] min-w-[44px] cursor-pointer disabled:opacity-50 rounded-2xl bg-muted/60 hover:bg-emerald-500/10 hover:text-emerald-700 dark:hover:text-emerald-300 border-border transition-all active:scale-95"
       >
         <ChevronLeft size={20} />
       </Button>
-      <div className="font-display text-[22px] font-bold text-foreground tracking-[-0.3px] truncate">
+      <div className="font-display text-lg font-bold text-foreground tracking-tight truncate">
         {title}
       </div>
     </div>

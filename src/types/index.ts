@@ -27,38 +27,4 @@ export type Kasbon = Omit<HrSchema['kasbon']['Row'], 'status'> & {
 
 export type Payroll = Omit<HrSchema['payroll']['Row'], 'status'> & {
   status: PayrollStatus
-}
-
-export interface Employee extends Omit<User, 'status' | 'role' | 'salary' | 'dept' | 'kasbon_limit'> {
-  email: string
-  jabatan: string
-  role: 'admin' | 'employee'
-  phone: string
-  shift: string
-  address: string
-  joined: string
-  status: UserStatus
-  salary: number
-  dept: string
-  kasbon_limit: number
-  absen?: number
-  kasbon_used?: number
-  last_slip?: string
-}
-
-export interface EmployeeFormData {
-  name: string
-  emp_id: string
-  email: string
-  password?: string
-  phone: string
-  address: string
-  dept: string
-  jabatan: string
-  role: 'admin' | 'employee'
-  salary: string | number
-  shift: string
-  kasbon_limit: string | number
-  status: UserStatus
-  joined: string
-}
+}

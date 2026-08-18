@@ -379,51 +379,56 @@ export default function EmployeeHome() {
   return (
     <div className="flex flex-col h-full bg-background overflow-y-auto pb-24">
       {/* Header */}
-      <div className="p-6 pb-6 flex justify-between items-start bg-primary text-primary-foreground rounded-b-3xl">
+      <div className="p-6 pb-6 flex justify-between items-start bg-[#0c1d2a] text-white rounded-b-3xl shadow-sm">
         <div>
-          <p className="text-primary-foreground/70 text-xs mb-1">Welcome back,</p>
-          <h2 className="text-xl font-semibold capitalize">{userName}</h2>
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 text-emerald-300 text-[11px] font-semibold mb-2 border border-white/10">
+            <span>🐾</span> Dr.Meow Employee
+          </div>
+          <h2 className="text-xl font-display font-bold capitalize tracking-tight">{userName}</h2>
+          <p className="text-white/70 text-xs mt-0.5">Semoga harimu menyenangkan!</p>
         </div>
-        <button className="relative p-2 bg-white/10 rounded-full">
-          <Bell size={20} />
-          <span className="absolute top-2 right-2 w-2 h-2 bg-destructive rounded-full border border-primary"></span>
+        <button className="relative p-2.5 bg-white/10 hover:bg-white/15 active:scale-95 transition-all rounded-2xl border border-white/10 text-white shadow-xs">
+          <Bell size={18} />
+          <span className="absolute top-2 right-2 w-2 h-2 bg-amber-400 rounded-full"></span>
         </button>
       </div>
 
-      <div className="p-6 mt-4">
+      <div className="p-5 space-y-4">
         {/* Status Card */}
-        <div className="bg-card rounded-2xl shadow-sm border border-border p-6 mb-6">
-          <div className="flex justify-between items-center mb-6">
-            <div className="bg-muted px-3 py-1 rounded-full text-xs font-medium text-foreground">
-              {dateStringFull}
+        <div className="bg-card rounded-3xl shadow-xs border border-border/80 p-5">
+          <div className="flex justify-between items-center mb-5">
+            <div className="bg-muted px-3 py-1 rounded-full text-xs font-semibold text-foreground">
+              📅 {dateStringFull}
             </div>
             {!todayRecord ? (
-              <div className="flex items-center gap-1.5 text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full dark:bg-green-500/10 dark:text-green-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-600 dark:bg-green-400 animate-pulse"></span>
-                Absensi terbuka
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 rounded-full dark:text-emerald-300">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Absensi Terbuka
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded-full">
-                {todayRecord.clock_out_time ? "Selesai Kerja" : "Sudah Absen"}
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-500/15 border border-blue-500/30 px-2.5 py-1 rounded-full dark:text-blue-300">
+                {todayRecord.clock_out_time ? "✨ Selesai Kerja" : "✓ Sudah Masuk"}
               </div>
             )}
           </div>
           
-          <div className="text-center mb-6">
-            <h1 className="text-5xl font-display font-bold tracking-tight mb-2">{timeString}</h1>
-            <p className="text-sm text-muted-foreground">Jam kerja dimulai 08:00</p>
+          <div className="text-center mb-5">
+            <h1 className="text-5xl font-display font-black tracking-tight mb-1 text-foreground financial-num">{timeString}</h1>
+            <p className="text-xs font-medium text-muted-foreground flex items-center justify-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Jam kerja dimulai 08:00
+            </p>
           </div>
 
-          <div className="flex justify-between items-center px-4 py-3 bg-muted/50 rounded-xl mb-6">
+          <div className="flex justify-between items-center px-4 py-3 bg-muted/50 border border-border/60 rounded-2xl mb-5">
             <div>
-              <p className="text-xs text-muted-foreground mb-0.5">Status Hari Ini</p>
-              <p className="font-medium text-sm">
-                {isCutiActive ? "Cuti / Izin" : !todayRecord ? "Belum Absen" : todayRecord.clock_out_time ? "Selesai" : "Sudah Masuk"}
+              <p className="text-[11px] font-medium text-muted-foreground mb-0.5">Status Hari Ini</p>
+              <p className="font-bold text-sm text-foreground">
+                {isCutiActive ? "🌴 Cuti / Izin" : !todayRecord ? "⏳ Belum Absen" : todayRecord.clock_out_time ? "✨ Selesai" : "✓ Sudah Masuk"}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-xs text-muted-foreground mb-0.5">Kehadiran</p>
-              <p className="font-medium text-sm">26 Hari</p>
+              <p className="text-[11px] font-medium text-muted-foreground mb-0.5">Kehadiran Bulan Ini</p>
+              <p className="font-bold text-sm text-foreground">26 Hari Hadir</p>
             </div>
           </div>
 
@@ -435,43 +440,55 @@ export default function EmployeeHome() {
               handleStartClockOut
             }
             disabled={loading || isCutiActive || !!(todayRecord && todayRecord.clock_out_time)}
-            className={`w-full py-3.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
+            className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-xs ${
               isCutiActive || (todayRecord && todayRecord.clock_out_time) 
-                ? 'bg-muted text-muted-foreground cursor-not-allowed' 
+                ? 'bg-muted text-muted-foreground cursor-not-allowed shadow-none' 
                 : todayRecord 
-                  ? 'bg-secondary text-secondary-foreground border border-border hover:bg-secondary/80 active:scale-[0.98]' 
-                  : 'bg-primary text-primary-foreground shadow-md shadow-primary/20 active:scale-[0.98]'
+                  ? 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white active:scale-[0.98]' 
+                  : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white active:scale-[0.98]'
             }`}
           >
             {loading ? <RefreshCw size={18} className="animate-spin" /> : <Camera size={18} />}
-            {isCutiActive ? "Sedang Cuti/Izin" : todayRecord && todayRecord.clock_out_time ? "Absensi Selesai" : todayRecord ? "Absen Pulang" : "Absen Masuk"}
+            {isCutiActive ? "Sedang Cuti / Izin" : todayRecord && todayRecord.clock_out_time ? "Absensi Hari Ini Selesai" : todayRecord ? "Absen Pulang Sekarang" : "Absen Masuk Sekarang"}
           </button>
         </div>
 
-        {/* Mini Stats */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div className="bg-card border border-border rounded-xl p-4 shadow-sm relative overflow-hidden group">
-            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-              <Wallet size={16} />
-              <span className="text-xs font-medium">Kasbon</span>
+        {/* Mini Stats (Clean Flat Solid Surface Cards) */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* Kasbon Card */}
+          <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-xs group">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold">
+                  <Wallet size={15} />
+                </div>
+                <span className="text-xs font-bold text-foreground">Kasbon</span>
+              </div>
+              <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-full">Bulan Ini</span>
             </div>
-            <p className="text-lg font-bold mb-1">Rp {formatCurrencyShort(usedKasbon)}</p>
-            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-              <div className="h-full bg-amber-500 rounded-full" style={{ width: `${kasbonLimit > 0 ? Math.min((usedKasbon / kasbonLimit) * 100, 100) : 0}%` }}></div>
+            <p className="text-lg font-bold text-foreground mb-2 financial-num">Rp {formatCurrencyShort(usedKasbon)}</p>
+            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden mb-1.5">
+              <div className="h-full bg-amber-500 rounded-full transition-all duration-500" style={{ width: `${kasbonLimit > 0 ? Math.min((usedKasbon / kasbonLimit) * 100, 100) : 0}%` }}></div>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-2">Limit: Rp {formatCurrencyShort(kasbonLimit)}</p>
+            <p className="text-[11px] text-muted-foreground font-medium">Limit: <strong className="text-foreground financial-num">Rp {formatCurrencyShort(kasbonLimit)}</strong></p>
           </div>
           
-          <div className="bg-card border border-border rounded-xl p-4 shadow-sm relative overflow-hidden group">
-            <div className="flex items-center gap-2 mb-2 text-muted-foreground">
-              <FileText size={16} />
-              <span className="text-xs font-medium">Estimasi Gaji</span>
+          {/* Estimasi Gaji Card */}
+          <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-xs group">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold">
+                  <FileText size={15} />
+                </div>
+                <span className="text-xs font-bold text-foreground">Gaji Bersih</span>
+              </div>
+              <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-full">Estimasi</span>
             </div>
-            <p className="text-lg font-bold mb-1">Rp {formatCurrencyShort(Math.max(0, salary - usedKasbon))}</p>
-            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-              <div className="h-full bg-green-500 rounded-full" style={{ width: `${salary > 0 ? Math.max(0, Math.min(((salary - usedKasbon) / salary) * 100, 100)) : 100}%` }}></div>
+            <p className="text-lg font-bold text-foreground mb-2 financial-num">Rp {formatCurrencyShort(Math.max(0, salary - usedKasbon))}</p>
+            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden mb-1.5">
+              <div className="h-full bg-emerald-600 rounded-full transition-all duration-500" style={{ width: `${salary > 0 ? Math.max(0, Math.min(((salary - usedKasbon) / salary) * 100, 100)) : 100}%` }}></div>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-2">Bersih bulan ini</p>
+            <p className="text-[11px] text-muted-foreground font-medium">Take home pay</p>
           </div>
         </div>
 
@@ -479,9 +496,9 @@ export default function EmployeeHome() {
         {todayRecord && (
           <button
             onClick={handleDevReset}
-            className="w-full py-3 mb-5 rounded-xl text-sm flex items-center justify-center gap-2 text-destructive bg-destructive/10 hover:bg-destructive/20 font-medium transition-colors"
+            className="w-full py-2.5 rounded-2xl text-xs flex items-center justify-center gap-2 text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/20 font-semibold transition-colors"
           >
-            <RefreshCw size={16} /> Reset Absen (Dev)
+            <RefreshCw size={13} /> Reset Absen (Dev Mode)
           </button>
         )}
       </div>

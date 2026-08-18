@@ -82,15 +82,7 @@ export function useClockIn() {
     if (error) throw error
   }
 
-  // Legacy clockIn for backward compatibility
-  const clockIn = async () => {
-    const photoPromise = capturePhoto()
-    const coords = await getLocation()
-    const photo = await photoPromise
-    await saveAttendance(photo, coords)
-  }
-
-  return { clockIn, capturePhoto, getLocation, saveAttendance }
+  return { capturePhoto, getLocation, saveAttendance }
 }
 
 export function useClockOut() {

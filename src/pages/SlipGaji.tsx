@@ -97,23 +97,23 @@ export default function EmployeeSlipGaji() {
       <PageHeader title="Slip Gaji" onBack={() => navigate("/employee/profil")} />
 
       {/* Main Container */}
-      <div className="p-6 space-y-6 pb-24">
+      <div className="p-5 space-y-5 pb-24">
         {/* Latest Summary Card */}
         {latestPaidSlip && (
-          <div className="bg-gradient-to-br from-primary to-primary/90 text-primary-foreground p-5 rounded-2xl shadow-md space-y-3 relative overflow-hidden">
-            <div className="flex items-center justify-between text-xs text-primary-foreground/80 font-medium">
-              <span>Gaji Diterima Terakhir</span>
-              <span className="bg-primary-foreground/15 px-2.5 py-0.5 rounded-full font-semibold">
-                {getPeriodLabel(latestPaidSlip.period)}
+          <div className="bg-[#0c1d2a] text-white p-5 rounded-3xl shadow-xs space-y-3 border border-border/40">
+            <div className="flex items-center justify-between text-xs text-white/80 font-medium">
+              <span className="text-[11px] font-bold text-white/70 uppercase tracking-wider">Gaji Diterima Terakhir</span>
+              <span className="bg-white/10 text-white px-2.5 py-0.5 rounded-full font-bold text-xs border border-white/10">
+                📅 {getPeriodLabel(latestPaidSlip.period)}
               </span>
             </div>
 
-            <div>
-              <div className="text-2xl font-bold font-display tracking-tight">
+            <div className="pt-1">
+              <div className="text-3xl font-black font-display tracking-tight text-white financial-num">
                 {formatCurrency(latestPaidSlip.net_salary)}
               </div>
-              <div className="text-[11px] text-primary-foreground/75 mt-1 flex items-center gap-1.5">
-                <CheckCircle size={14} className="text-emerald-400" />
+              <div className="text-xs text-emerald-400 mt-1.5 flex items-center gap-1.5 font-semibold">
+                <CheckCircle size={15} className="text-emerald-400" />
                 <span>Terbayar ke rekening karyawan</span>
               </div>
             </div>
@@ -122,18 +122,21 @@ export default function EmployeeSlipGaji() {
 
         {/* List Section */}
         <div className="space-y-3">
-          <h3 className="font-bold text-base font-display text-foreground">
-            Riwayat Slip Gaji
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-xs font-display text-foreground uppercase tracking-wider">
+              Riwayat Slip Gaji
+            </h3>
+            <span className="text-xs text-muted-foreground font-semibold">{payrolls.length} Periode</span>
+          </div>
 
           {loading ? (
             <div className="text-center py-10 text-xs text-muted-foreground font-medium">
               Memuat slip gaji...
             </div>
           ) : payrolls.length === 0 ? (
-            <div className="flex flex-col items-center justify-center text-center text-muted-foreground gap-3 py-10 bg-card border border-border/80 rounded-2xl p-6">
-              <FileText size={40} className="stroke-[1.2] text-muted-foreground/60" />
-              <div className="font-semibold text-sm text-foreground">Belum Ada Slip Gaji</div>
+            <div className="flex flex-col items-center justify-center text-center text-muted-foreground gap-3 py-10 bg-card border border-border/80 rounded-3xl p-6 shadow-xs">
+              <FileText size={38} className="stroke-[1.2] text-muted-foreground" />
+              <div className="font-bold text-sm text-foreground">Belum Ada Slip Gaji</div>
               <div className="text-xs max-w-[220px] leading-relaxed">
                 Slip gaji bulanan Anda akan muncul di sini setelah diterbitkan oleh admin.
               </div>
@@ -149,31 +152,31 @@ export default function EmployeeSlipGaji() {
                       setSelectedSlip(slip);
                       setShowDetail(true);
                     }}
-                    className="bg-card border border-border/80 rounded-2xl p-4 shadow-sm hover:bg-accent/40 transition-all cursor-pointer flex items-center justify-between min-h-[44px]"
+                    className="bg-card border border-border/80 rounded-2xl p-4 shadow-xs hover:border-border transition-all cursor-pointer flex items-center justify-between min-h-[44px]"
                   >
                     <div className="flex items-center gap-3.5 min-w-0">
                       <div
-                        className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                           isPaid
-                            ? "bg-status-success-bg text-status-success"
-                            : "bg-status-warning-bg text-status-warning"
+                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
+                            : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/20"
                         }`}
                       >
-                        <FileText size={20} />
+                        <FileText size={18} />
                       </div>
                       <div className="min-w-0">
-                        <div className="font-semibold text-sm text-foreground truncate">
+                        <div className="font-bold text-sm text-foreground truncate">
                           {getPeriodLabel(slip.period)}
                         </div>
                         <div className="mt-1 flex items-center gap-2">
                           <span
-                            className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-md ${
+                            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
                               isPaid
-                                ? "bg-status-success-bg text-status-success"
-                                : "bg-status-warning-bg text-status-warning"
+                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
+                                : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/20"
                             }`}
                           >
-                            {isPaid ? "Terbayar" : "Draft"}
+                            {isPaid ? "✓ Terbayar" : "⏳ Draft"}
                           </span>
                         </div>
                       </div>
@@ -181,10 +184,10 @@ export default function EmployeeSlipGaji() {
 
                     <div className="text-right shrink-0 flex items-center gap-2">
                       <div>
-                        <div className="font-bold text-sm text-foreground">
+                        <div className="font-black text-sm text-foreground financial-num">
                           {formatCurrency(slip.net_salary)}
                         </div>
-                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                        <div className="text-[10px] text-muted-foreground mt-0.5 font-medium">
                           Gaji Bersih
                         </div>
                       </div>
@@ -203,24 +206,24 @@ export default function EmployeeSlipGaji() {
         {selectedSlip && (
           <DialogContent
             showCloseButton={false}
-            className="w-[calc(100%-2rem)] max-w-md mx-auto bg-card border border-border/80 rounded-2xl p-0 overflow-hidden shadow-2xl"
+            className="w-[calc(100%-2rem)] max-w-md mx-auto bg-card border border-border/80 rounded-3xl p-0 overflow-hidden shadow-2xl"
           >
             {/* Header */}
-            <div className="p-4 border-b border-border/80 flex items-center justify-between bg-muted/20">
+            <div className="p-4 border-b border-border/80 flex items-center justify-between bg-muted/30">
               <div>
                 <DialogTitle className="font-bold text-base font-display text-foreground">
                   Rincian Slip Gaji
                 </DialogTitle>
-                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5 font-medium">
                   Periode {getPeriodLabel(selectedSlip.period)}
                 </DialogDescription>
               </div>
               <DialogClose asChild>
                 <button
                   aria-label="Tutup"
-                  className="w-9 h-9 min-h-[44px] min-w-[44px] rounded-xl bg-muted/60 flex items-center justify-center hover:bg-muted transition-colors text-muted-foreground"
+                  className="w-8 h-8 rounded-xl bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors text-muted-foreground"
                 >
-                  <X size={18} />
+                  <X size={16} />
                 </button>
               </DialogClose>
             </div>
@@ -229,35 +232,35 @@ export default function EmployeeSlipGaji() {
             <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
               {/* Receipt Style Box */}
               <div className="bg-muted/30 border border-border/70 rounded-2xl p-4 space-y-3">
-                <div className="text-[11px] font-semibold text-muted-foreground uppercase border-b border-border/70 pb-2">
-                  Komponen Gaji & Potongan
+                <div className="text-[11px] font-bold text-muted-foreground uppercase border-b border-border/70 pb-2 tracking-wider">
+                  Komponen Penghasilan & Potongan
                 </div>
                 <div className="space-y-2.5 text-xs">
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Gaji Pokok</span>
-                    <span className="font-semibold text-foreground">
+                    <span className="text-muted-foreground font-medium">Gaji Pokok</span>
+                    <span className="font-bold text-foreground financial-num">
                       {formatCurrency(selectedSlip.basic_salary)}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center text-status-success">
-                    <span>Insentif / Bonus</span>
-                    <span className="font-semibold">
+                  <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400 font-medium">
+                    <span>+ Insentif / Bonus</span>
+                    <span className="font-bold financial-num">
                       +{formatCurrency(selectedSlip.incentives)}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center text-status-danger">
-                    <span>Potongan Kasbon</span>
-                    <span className="font-semibold">
+                  <div className="flex justify-between items-center text-rose-600 dark:text-rose-400 font-medium">
+                    <span>- Potongan Kasbon</span>
+                    <span className="font-bold financial-num">
                       -{formatCurrency(selectedSlip.kasbon_deduction)}
                     </span>
                   </div>
                 </div>
 
                 <div className="border-t border-border/70 pt-3 mt-2 flex justify-between items-center">
-                  <span className="font-bold text-xs text-foreground uppercase">
-                    GAJI BERSIH DITERIMA
+                  <span className="font-extrabold text-xs text-foreground uppercase tracking-wider">
+                    GAJI BERSIH
                   </span>
-                  <span className="text-base font-bold text-primary font-display">
+                  <span className="text-lg font-black text-emerald-700 dark:text-emerald-300 font-display financial-num">
                     {formatCurrency(selectedSlip.net_salary)}
                   </span>
                 </div>

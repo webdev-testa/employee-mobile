@@ -19,16 +19,20 @@
     --color-block-navy: #1f1d3d;
     --color-accent-magenta: #ff3d8b;
 
-    /* Semantic Status Tokens */
-    --color-status-success: #3aad7a;
-    --color-status-success-bg: #e2f0e8;
+    /* Wise Brand & Financial Highlight Tokens */
+    --color-brand-lime: #9fe870;
+    --color-brand-forest: #163300;
+
+    /* Wise-Inspired Semantic Status Tokens */
+    --color-status-success: #2ead4b;
+    --color-status-success-bg: #e2f6d5;
     --color-status-warning: #e89e3a;
     --color-status-warning-bg: #faf0e1;
-    --color-status-danger: #f87171;
-    --color-status-info: #4a7a8a;
-    --color-status-info-bg: #f0faff;
+    --color-status-danger: #d03238;
+    --color-status-info: #254fad;
+    --color-status-info-bg: #f0f7ff;
     --color-status-info-border: #c8e8f5;
-    --color-status-neutral: #a8a49e;
+    --color-status-neutral: #707a8a;
     --color-status-neutral-bg: #edeae4;
 
     --color-sidebar-ring: var(--sidebar-ring);
@@ -150,4 +154,11 @@
   html {
     @apply font-sans;
     }
+}
+
+@layer utilities {
+  .financial-num {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
 }
