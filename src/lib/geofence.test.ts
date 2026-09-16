@@ -25,4 +25,25 @@ describe("geofence utility", () => {
     const within = isWithinArea(farLat, farLng, OFFICE_LAT, OFFICE_LNG, 100);
     expect(within).toBe(false);
   });
+
+  describe("Red-Team Stress & Edge Case Hardening", () => {
+    it("safely handles NaN and non-numeric inputs without crashing", () => {
+      expect(getDistance(NaN, 106.82, OFFICE_LAT, OFFICE_LNG)).toBe(Infinity);
+      expect(getDistance(OFFICE_LAT, NaN, OFFICE_LAT, OFFICE_LNG)).toBe(Infinity);
+      expect(isWithinArea(NaN, NaN, OFFICE_LAT, OFFICE_LNG)).toBe(false);
+    });
+
+    it("safely handles antipodal points without producing NaN due to floating-point rounding", () => {
+      // Antipodal points: North Pole to South Pole
+      const dist = getDistance(-90, 0, 90, 0);
+      expect(Number.isNaN(dist)).toBe(false);
+      expect(dist).toBeGreaterThan(19000000); // Earth half-circumference ~20,000 km
+    });
+
+    it("safely handles Null Island (0,0) without returning NaN", () => {
+      const dist = getDistance(0, 0, OFFICE_LAT, OFFICE_LNG);
+      expect(Number.isFinite(dist)).toBe(true);
+      expect(isWithinArea(0, 0, OFFICE_LAT, OFFICE_LNG)).toBe(false);
+    });
+  });
 });

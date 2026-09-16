@@ -50,6 +50,22 @@ export const hitungMalam = (masuk: string, keluar: string): number => {
   return diffDays > 0 ? diffDays : 1
 }
 
+// Calculate ordinal stay day for badges ("Hari ke-1", "Hari ke-2", etc.)
+export const hitungHariMenginap = (masuk: string, today: string): number => {
+  if (!masuk || !today) return 1
+  const t1 = new Date(masuk).getTime()
+  const t2 = new Date(today).getTime()
+  const diffDays = Math.floor((t2 - t1) / (1000 * 60 * 60 * 24))
+  return Math.max(1, diffDays + 1)
+}
+
+// Returns today's date formatted as YYYY-MM-DD in user's local timezone (prevents UTC drift in UTC+7/8/9)
+export const getTodayLocalDate = (): string => {
+  const d = new Date()
+  const offset = d.getTimezoneOffset() * 60000
+  return new Date(d.getTime() - offset).toISOString().split('T')[0]
+}
+
 export const copyToClipboard = async (text: string): Promise<boolean> => {
   try {
     if (navigator?.clipboard?.writeText) {
@@ -81,21 +97,22 @@ export const calculateBilling = (
   checkoutDateStr?: string,
   extraCharges: { jumlah: number; keterangan?: string }[] = []
 ): BillingCalculation => {
-  const checkoutDate = checkoutDateStr || booking.tanggal_keluar_aktual || booking.tanggal_keluar_estimasi || new Date().toISOString().split('T')[0]
-  const checkinDate = booking.tanggal_masuk || new Date().toISOString().split('T')[0]
+  const today = getTodayLocalDate()
+  const checkoutDate = checkoutDateStr || booking.tanggal_keluar_aktual || booking.tanggal_keluar_estimasi || today
+  const checkinDate = booking.tanggal_masuk || today
 
   const jumlah_malam = hitungMalam(checkinDate, checkoutDate)
   const subtotal = jumlah_malam * (booking.harga_per_hari || 0)
 
   const existingDp = booking.transactions
     ?.filter(t => t.tipe === 'dp')
-    .reduce((sum, t) => sum + Number(t.jumlah || 0), 0) ?? 0
+    .reduce((sum, t) => sum + Math.max(0, Number(t.jumlah || 0)), 0) ?? 0
 
   const existingBiayaTambahan = booking.transactions
     ?.filter(t => t.tipe === 'biaya_tambahan')
-    .reduce((sum, t) => sum + Number(t.jumlah || 0), 0) ?? 0
+    .reduce((sum, t) => sum + Math.max(0, Number(t.jumlah || 0)), 0) ?? 0
 
-  const newBiayaTambahan = extraCharges.reduce((sum, t) => sum + Number(t.jumlah || 0), 0)
+  const newBiayaTambahan = extraCharges.reduce((sum, t) => sum + Math.max(0, Number(t.jumlah || 0)), 0)
   const total_biaya_tambahan = existingBiayaTambahan + newBiayaTambahan
 
   const total = subtotal + total_biaya_tambahan

@@ -54,13 +54,22 @@ export default function Kasbon() {
     cancelKasbon,
   } = useKasbon(user?.id);
 
+  const isSubmittingRef = useRef(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+
   const handleCancel = async (id: string) => {
+    if (cancellingId) return;
     if (window.confirm("Apakah Anda yakin ingin membatalkan pengajuan kasbon ini?")) {
-      const result = await cancelKasbon(id);
-      if (result.success) {
-        toast.success("Pengajuan kasbon berhasil dibatalkan");
-      } else {
-        toast.error(result.error || "Gagal membatalkan pengajuan");
+      try {
+        setCancellingId(id);
+        const result = await cancelKasbon(id);
+        if (result.success) {
+          toast.success("Pengajuan kasbon berhasil dibatalkan");
+        } else {
+          toast.error(result.error || "Gagal membatalkan pengajuan");
+        }
+      } finally {
+        setCancellingId(null);
       }
     }
   };
@@ -86,13 +95,16 @@ export default function Kasbon() {
     .reduce((sum, k) => sum + k.amount, 0);
 
   const handleSubmit = async () => {
-    if (!reason.trim()) {
-      setSubmitError('Alasan pengajuan wajib diisi');
+    if (isSubmittingRef.current || flowState === 'submitting') return;
+
+    const cleanReason = reason.trim();
+    if (!cleanReason || cleanReason.length < 5) {
+      setSubmitError('Alasan pengajuan wajib diisi (minimal 5 karakter)');
       reasonRef.current?.focus();
       return;
     }
-    if (amount <= 0) {
-      setSubmitError('Jumlah kasbon harus lebih dari 0');
+    if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount <= 0) {
+      setSubmitError('Jumlah kasbon harus berupa bilangan bulat positif');
       return;
     }
     if (amount > remainingLimit) {
@@ -100,21 +112,30 @@ export default function Kasbon() {
       return;
     }
 
+    isSubmittingRef.current = true;
     setSubmitError(null);
     setFlowState('submitting');
 
-    const result = await submitKasbon(amount, reason.trim(), category);
+    try {
+      const result = await submitKasbon(amount, cleanReason, category);
 
-    if (result.success) {
-      setLastSubmitted({ amount, reason: reason.trim(), category });
-      setFlowState('success');
-      // Reset form
-      setAmount(250000);
-      setReason('');
-      setCategory(CATEGORIES[0]);
-    } else {
-      setSubmitError(result.error ?? 'Terjadi kesalahan');
+      if (result.success) {
+        setLastSubmitted({ amount, reason: cleanReason, category });
+        setFlowState('success');
+        // Reset form
+        setAmount(250000);
+        setReason('');
+        setCategory(CATEGORIES[0]);
+      } else {
+        setSubmitError(result.error ?? 'Terjadi kesalahan');
+        setFlowState('form');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Terjadi kesalahan pada sistem';
+      setSubmitError(msg);
       setFlowState('form');
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 

@@ -43,8 +43,9 @@ export default function EmployeeAbsensi() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const firstDayOfMonth = new Date(year, month, 1).toISOString().split("T")[0];
-      const lastDayOfMonth = new Date(year, month + 1, 0).toISOString().split("T")[0];
+      const firstDayOfMonth = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      const lastDayOfMonth = `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
 
       const { data, error } = await supabase
         .schema("hr")
@@ -92,7 +93,8 @@ export default function EmployeeAbsensi() {
 
   const handleDayClick = (dateStr: string) => {
     if (!dateStr) return;
-    const todayStr = new Date().toISOString().split("T")[0];
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
     if (dateStr > todayStr && !attendanceMap[dateStr]) return;
 
     const record = attendanceMap[dateStr];

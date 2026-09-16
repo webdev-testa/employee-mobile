@@ -16,6 +16,9 @@ import GroomingHome from "@/pages/grooming/GroomingHome";
 import GroomingCheckIn from "@/pages/grooming/GroomingCheckIn";
 import GroomingWorkstation from "@/pages/grooming/GroomingWorkstation";
 import HotelHome from "@/pages/hotel/HotelHome";
+import HotelCheckIn from "@/pages/hotel/HotelCheckIn";
+import HotelDailyReport from "@/pages/hotel/HotelDailyReport";
+import HotelCheckOut from "@/pages/hotel/HotelCheckOut";
 import { EmployeeLayout } from "@/components/layout/EmployeeLayout";
 
 // Auth
@@ -175,6 +178,18 @@ export const router = createBrowserRouter([
                   {
                     path: "/employee/hotel",
                     element: <HotelHome />,
+                  },
+                  {
+                    path: "/employee/hotel/checkin",
+                    element: <HotelCheckIn />,
+                  },
+                  {
+                    path: "/employee/hotel/report",
+                    element: <HotelDailyReport />,
+                  },
+                  {
+                    path: "/employee/hotel/checkout",
+                    element: <HotelCheckOut />,
                   },
                   {
                     path: "/employee/kasbon",

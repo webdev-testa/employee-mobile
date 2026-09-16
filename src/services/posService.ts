@@ -1,6 +1,8 @@
 import { supabase } from '@/lib/supabase'
 import { supabasePos } from '@/lib/supabasePos'
+import { offlineQueue } from '@/lib/offlineQueue'
 import { DEFAULT_OWNERS } from '@/constants/pos.constants'
+import { calculateBilling, getTodayLocalDate } from '@/utils/pos.utils'
 import type {
   Owner,
   Cat,
@@ -14,6 +16,28 @@ import type {
 const posDb = () => supabasePos
 
 const STORAGE_KEY_OWNERS = 'dr_meow_pos_owners_cache'
+const STORAGE_KEY_BOOKINGS = 'dr_meow_pos_bookings_cache'
+
+export const getCachedBookings = (): Booking[] => {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_BOOKINGS)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+export const saveCachedBookings = (bookings: Booking[]) => {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(STORAGE_KEY_BOOKINGS, JSON.stringify(bookings))
+  } catch (e) {
+    console.error('Failed to cache bookings:', e)
+  }
+}
 
 export const getCachedOwners = (): Owner[] => {
   if (typeof window === 'undefined') return DEFAULT_OWNERS
@@ -80,7 +104,7 @@ export const posService = {
    * Fetch all bookings with nested relationships.
    */
   async fetchBookings(): Promise<Booking[]> {
-    const today = new Date().toISOString().split('T')[0]
+    const today = getTodayLocalDate()
     try {
       const { data, error } = await posDb()
         .from('bookings')
@@ -94,12 +118,12 @@ export const posService = {
         .order('created_at', { ascending: false })
 
       if (error) {
-        console.warn('Error fetching POS bookings from DB:', error)
-        return []
+        console.warn('Error fetching POS bookings from DB, returning cache:', error.message)
+        return getCachedBookings()
       }
 
       const rawBookings = (data as unknown as Booking[]) || []
-      return rawBookings.map(b => ({
+      const formatted = rawBookings.map(b => ({
         ...b,
         harga_per_hari: Number(b.harga_per_hari || 0),
         transactions: (b.transactions || []).map((t: Transaction) => ({
@@ -110,9 +134,12 @@ export const posService = {
         })),
         sudah_laporan: (b.daily_reports || []).some((r: DailyReport) => r.tanggal === today),
       }))
+
+      saveCachedBookings(formatted)
+      return formatted
     } catch (err) {
-      console.warn('fetchBookings error:', err)
-      return []
+      console.warn('fetchBookings error, returning cache:', err)
+      return getCachedBookings()
     }
   },
 
@@ -120,7 +147,7 @@ export const posService = {
    * Fetch a single booking by ID with full nested details.
    */
   async fetchBookingById(id: string): Promise<Booking | null> {
-    const today = new Date().toISOString().split('T')[0]
+    const today = getTodayLocalDate()
     try {
       const { data, error } = await posDb()
         .from('bookings')
@@ -136,8 +163,9 @@ export const posService = {
 
       if (error) {
         if (error.code === 'PGRST116') return null
-        console.error('Error fetching booking detail:', error)
-        return null
+        console.warn('Error fetching booking detail, checking cache:', error.message)
+        const cached = getCachedBookings().find(b => b.id === id)
+        return cached || null
       }
 
       const bookingData = data as unknown as Booking
@@ -347,6 +375,7 @@ export const posService = {
     }
     const cached = getCachedOwners()
     saveCachedOwners([localOwner, ...cached])
+    offlineQueue.enqueue('pos_upsert_owner', { ...localOwner })
     return localOwner
   },
 
@@ -413,6 +442,7 @@ export const posService = {
       owner.cats = [localCat, ...(owner.cats || [])]
       saveCachedOwners([...cached])
     }
+    offlineQueue.enqueue('pos_create_cat', { ...localCat })
     return localCat
   },
 
@@ -461,7 +491,7 @@ export const posService = {
       if (!bookingError && booking) {
         const dp = Number(payload.booking.dp) || 0
         let recordedTx: Transaction | undefined
-        if (dp > 0) {
+        if (dp > 0 && payload.booking.sudah_bayar_dp === true) {
           const { data: tx } = await posDb()
             .from('transactions')
             .insert({
@@ -482,21 +512,28 @@ export const posService = {
           }
         }
 
-        return {
+        const formattedBooking = {
           ...booking,
           harga_per_hari: Number(booking.harga_per_hari),
           transactions: recordedTx ? [recordedTx] : [],
           daily_reports: [],
           sudah_laporan: false,
         }
+        const cached = getCachedBookings()
+        saveCachedBookings([formattedBooking, ...cached])
+        return formattedBooking
       }
     } catch (e) {
       console.warn('Database booking insert failed, using fallback:', e)
     }
 
-    // Fallback booking
+    // Fallback booking with valid UUID
+    const fallbackBookingId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : '00000000-0000-4000-8000-' + Date.now().toString(16).padStart(12, '0')
+
     const fallbackBooking: Booking = {
-      id: 'book-local-' + Date.now(),
+      id: fallbackBookingId,
       cat_id: catId,
       owner_id: ownerId,
       tanggal_masuk: payload.booking.tanggal_masuk,
@@ -527,6 +564,14 @@ export const posService = {
       sudah_laporan: false,
     }
 
+    const currentCached = getCachedBookings()
+    saveCachedBookings([fallbackBooking, ...currentCached])
+    offlineQueue.enqueue('hotel_checkin', {
+      ...fallbackBooking,
+      dp: payload.booking.dp,
+      sudah_bayar_dp: payload.booking.sudah_bayar_dp,
+    })
+
     return fallbackBooking
   },
 
@@ -535,6 +580,10 @@ export const posService = {
    */
   async upsertDailyReport(report: Omit<DailyReport, 'id' | 'created_at'>): Promise<DailyReport> {
     try {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new Error('Device is offline')
+      }
+
       const { data, error } = await posDb()
         .from('daily_reports')
         .upsert(
@@ -556,42 +605,169 @@ export const posService = {
         .single()
 
       if (!error && data) {
+        const cached = getCachedBookings()
+        const bIdx = cached.findIndex(b => b.id === report.booking_id)
+        if (bIdx >= 0) {
+          const reports = [...(cached[bIdx].daily_reports || [])]
+          const rIdx = reports.findIndex(r => r.tanggal === report.tanggal)
+          if (rIdx >= 0) reports[rIdx] = data
+          else reports.push(data)
+          cached[bIdx] = { ...cached[bIdx], daily_reports: reports, sudah_laporan: true }
+          saveCachedBookings(cached)
+        }
         return data
       }
     } catch (e) {
-      console.warn('upsertDailyReport DB error, using fallback:', e)
+      console.warn('upsertDailyReport DB error, queueing offline mutation:', e)
+      offlineQueue.enqueue('hotel_daily_report', report)
     }
 
-    return {
+    const fallbackReportId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : '00000000-0000-4000-8000-' + Date.now().toString(16).padStart(12, '0')
+
+    const fallbackReport: DailyReport = {
       ...report,
-      id: 'report-local-' + Date.now(),
+      id: fallbackReportId,
       created_at: new Date().toISOString(),
     }
+
+    const cached = getCachedBookings()
+    const bIdx = cached.findIndex(b => b.id === report.booking_id)
+    if (bIdx >= 0) {
+      const reports = [...(cached[bIdx].daily_reports || [])]
+      const rIdx = reports.findIndex(r => r.tanggal === report.tanggal)
+      if (rIdx >= 0) reports[rIdx] = fallbackReport
+      else reports.push(fallbackReport)
+      cached[bIdx] = { ...cached[bIdx], daily_reports: reports, sudah_laporan: true }
+      saveCachedBookings(cached)
+    }
+
+    return fallbackReport
   },
 
   /**
-   * Complete check-out process on mobile: marks booking 'selesai'.
+   * Complete check-out process on mobile: marks booking 'selesai' and logs settlement.
    */
   async executeCheckout(payload: ExecuteCheckoutPayload): Promise<void> {
-    const { bookingId, checkoutDate } = payload
+    const { bookingId, checkoutDate, extraCharges, sudahBayar } = payload
 
-    try {
-      await posDb()
-        .from('bookings')
-        .update({
-          status: 'selesai',
-          tanggal_keluar_aktual: checkoutDate,
-        })
-        .eq('id', bookingId)
-    } catch (e) {
-      console.warn('executeCheckout DB error:', e)
+    const currentBooking = await this.fetchBookingById(bookingId)
+    if (currentBooking && currentBooking.status === 'selesai') {
+      throw new Error('Booking ini sudah selesai dan tidak dapat di-checkout ulang.')
     }
+
+    const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false
+    if (isOffline) {
+      const billing = calculateBilling(
+        currentBooking || ({
+          id: bookingId,
+          cat_id: '',
+          owner_id: '',
+          tanggal_masuk: checkoutDate,
+          tanggal_keluar_estimasi: checkoutDate,
+          paket: 'Standard',
+          harga_per_hari: 0,
+          status: 'selesai',
+          created_at: '',
+          transactions: [],
+        } as Booking),
+        checkoutDate,
+        extraCharges
+      )
+
+      offlineQueue.enqueue('hotel_checkout', {
+        bookingId,
+        checkoutDate,
+        extraCharges,
+        settlementAmount: sudahBayar ? billing.sisa_bayar : 0,
+      })
+
+      const cached = getCachedBookings()
+      const updated = cached.map(b =>
+        b.id === bookingId
+          ? { ...b, status: 'selesai' as const, tanggal_keluar_aktual: checkoutDate }
+          : b
+      )
+      saveCachedBookings(updated)
+      return
+    }
+
+    const { error: updateError } = await posDb()
+      .from('bookings')
+      .update({
+        status: 'selesai',
+        tanggal_keluar_aktual: checkoutDate,
+      })
+      .eq('id', bookingId)
+
+    if (updateError) {
+      throw new Error(`Gagal memperbarui status checkout: ${updateError.message}`)
+    }
+
+    // Record extra charges transactions if provided
+    if (extraCharges && extraCharges.length > 0) {
+      for (const charge of extraCharges) {
+        if (charge.jumlah > 0) {
+          const { error: chargeErr } = await posDb().from('transactions').insert({
+            booking_id: bookingId,
+            tipe: 'biaya_tambahan',
+            jumlah: Math.max(0, charge.jumlah),
+            keterangan: charge.keterangan || 'Biaya Tambahan',
+          })
+          if (chargeErr) {
+            console.warn('Gagal mencatat transaksi biaya tambahan:', chargeErr)
+          }
+        }
+      }
+    }
+
+    // Record settlement payment transaction if marked as sudah bayar
+    if (sudahBayar) {
+      const billing = calculateBilling(
+        currentBooking || ({
+          id: bookingId,
+          cat_id: '',
+          owner_id: '',
+          tanggal_masuk: checkoutDate,
+          tanggal_keluar_estimasi: checkoutDate,
+          paket: 'Standard',
+          harga_per_hari: 0,
+          status: 'selesai',
+          created_at: '',
+          transactions: [],
+        } as Booking),
+        checkoutDate,
+        extraCharges
+      )
+
+      if (billing.sisa_bayar > 0) {
+        const { error: settleErr } = await posDb().from('transactions').insert({
+          booking_id: bookingId,
+          tipe: 'pelunasan',
+          jumlah: billing.sisa_bayar,
+          metode_bayar: 'Tunai',
+          keterangan: 'Pelunasan Check-Out (Mobile)',
+        })
+        if (settleErr) {
+          console.warn('Gagal mencatat transaksi pelunasan:', settleErr)
+        }
+      }
+    }
+
+    const cached = getCachedBookings()
+    const updated = cached.map(b =>
+      b.id === bookingId
+        ? { ...b, status: 'selesai' as const, tanggal_keluar_aktual: checkoutDate }
+        : b
+    )
+    saveCachedBookings(updated)
   },
 
   /**
    * Upload an image to Supabase Storage bucket 'cat-photos'.
    */
-  async uploadPhoto(file: File, folder: 'cats' | 'reports' | 'grooming' = 'cats'): Promise<string> {
+  async uploadPhoto(file: File | Blob, folder: 'cats' | 'reports' | 'grooming' = 'cats'): Promise<string> {
     const ALLOWED_MIME_TYPES: Record<string, string> = {
       'image/jpeg': 'jpg',
       'image/jpg': 'jpg',
@@ -605,10 +781,11 @@ export const posService = {
       throw new Error('Format file tidak didukung. Harap unggah foto format JPEG, PNG, atau WebP.')
     }
 
+    const safeFolder = folder.replace(/\.\./g, '').replace(/[^a-zA-Z0-9_-]/g, '').trim() || 'cats'
     const uniqueToken = typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID().replace(/-/g, '').substring(0, 12)
       : Math.random().toString(36).substring(2, 10)
-    const fileName = `${folder}/${Date.now()}-${uniqueToken}.${safeExt}`
+    const fileName = `${safeFolder}/${Date.now()}-${uniqueToken}.${safeExt}`
 
     try {
       const { error: uploadError } = await supabase.storage

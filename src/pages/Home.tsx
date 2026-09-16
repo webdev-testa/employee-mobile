@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 import { supabase } from "@/lib/supabase";
 import { groomingService } from "@/services/groomingService";
-import { useClockIn, useClockOut } from "@/hooks/useAbsensi";
+import { posService } from "@/services/posService";
+import { useClockIn, useClockOut, getLocalDateString } from "@/hooks/useAbsensi";
 import { useAuth } from "@/hooks/useAuth";
 import { useKasbon } from "@/hooks/useKasbon";
 import { toast } from "sonner";
@@ -35,11 +36,25 @@ function formatCurrencyShort(n: number): string {
   return n.toLocaleString('id-ID');
 }
 
+interface AttendanceRecord {
+  id: string;
+  date: string;
+  clock_in_time: string | null;
+  clock_out_time: string | null;
+  clock_in_lat: number | null;
+  clock_in_lng: number | null;
+  clock_out_lat: number | null;
+  clock_out_lng: number | null;
+  clock_in_photo_url: string | null;
+  status: string;
+}
+
 export default function EmployeeHome() {
   const { user: authUser } = useAuth();
-  const [userName, setUserName] = useState("Employee");
+  const userName = authUser?.name || "Employee";
+  const salary = authUser?.salary ?? 0;
   const [loading, setLoading] = useState(false);
-  const [todayRecord, setTodayRecord] = useState<any>(null);
+  const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
   const [actionType, setActionType] = useState<"in" | "out">("in");
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -66,9 +81,18 @@ export default function EmployeeHome() {
     });
   };
 
+  const isSubmittingRef = useRef(false);
+
+  const handleCancelConfirm = () => {
+    updatePhotoUrl(null);
+    setPhotoBlob(null);
+    setCoords(null);
+    setFlowState("idle");
+  };
+
   const { usedThisMonth: usedKasbon, kasbonLimit } = useKasbon(authUser?.id);
-  const [salary, setSalary] = useState(0);
   const [groomingCount, setGroomingCount] = useState(0);
+  const [hotelCount, setHotelCount] = useState(0);
 
   const mapRef = useRef<HTMLDivElement>(null);
 
@@ -83,6 +107,14 @@ export default function EmployeeHome() {
         setGroomingCount(active.length);
       }
     }).catch(() => {});
+
+    posService.fetchBookings().then(bookings => {
+      if (mounted) {
+        const active = bookings.filter(b => b.status === 'aktif');
+        setHotelCount(active.length);
+      }
+    }).catch(() => {});
+
     return () => {
       mounted = false;
     };
@@ -120,20 +152,12 @@ export default function EmployeeHome() {
     }
   }, [flowState, coords]);
 
-  // Load user details
-  useEffect(() => {
-    if (!authUser) return;
-
-    setUserName(authUser.name || "Employee");
-    setSalary(authUser.salary ?? 0);
-  }, [authUser]);
-
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
     const checkStatus = async () => {
       if (!authUser) return;
-      const today = new Date().toISOString().split("T")[0];
+      const today = getLocalDateString();
       const { data } = await supabase
         .schema("hr")
         .from("attendance")
@@ -168,8 +192,9 @@ export default function EmployeeHome() {
       updatePhotoUrl(URL.createObjectURL(photo));
       setActionType("in");
       setFlowState("confirm");
-    } catch (error: any) {
-      toast.error("Gagal memulai absen", { description: error.message });
+    } catch (error: unknown) {
+      const description = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error("Gagal memulai absen", { description });
     } finally {
       setLoading(false);
     }
@@ -191,28 +216,31 @@ export default function EmployeeHome() {
       updatePhotoUrl(null);
       setActionType("out");
       setFlowState("confirm");
-    } catch (error: any) {
-      toast.error("Gagal memulai absen pulang", { description: error.message });
+    } catch (error: unknown) {
+      const description = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error("Gagal memulai absen pulang", { description });
     } finally {
       setLoading(false);
     }
   };
 
   const handleConfirmClockIn = async () => {
+    if (isSubmittingRef.current || loading) return;
     if (!photoBlob || !coords) return;
     const isOk = isWithinArea(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG, GEOFENCE_RADIUS);
     if (!isOk) {
       const dist = getDistance(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG);
       toast.error("Gagal menyimpan absen", {
-        description: `Anda berada di luar radius kantor (${Math.round(dist)}m). Batas maksimum adalah ${GEOFENCE_RADIUS}m.`
+        description: `Anda berada di luar radius kantor (${Number.isFinite(dist) ? Math.round(dist) : 0}m). Batas maksimum adalah ${GEOFENCE_RADIUS}m.`
       });
       return;
     }
+    isSubmittingRef.current = true;
     try {
       setLoading(true);
       await saveAttendance(photoBlob, coords, authUser?.shift);
       
-      const today = new Date().toISOString().split("T")[0];
+      const today = getLocalDateString();
       const { data } = await supabase
         .schema("hr")
         .from("attendance")
@@ -226,28 +254,32 @@ export default function EmployeeHome() {
       
       setFlowState("success");
       toast.success("Absen Masuk Berhasil!");
-    } catch (error: any) {
-      toast.error("Gagal menyimpan absen", { description: error.message });
+    } catch (error: unknown) {
+      const description = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error("Gagal menyimpan absen", { description });
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
   const handleConfirmClockOut = async () => {
-    if (!coords) return;
+    if (isSubmittingRef.current || loading) return;
+    if (!coords || !todayRecord) return;
     const isOk = isWithinArea(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG, GEOFENCE_RADIUS);
     if (!isOk) {
       const dist = getDistance(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG);
       toast.error("Gagal menyimpan absen", {
-        description: `Anda berada di luar radius kantor (${Math.round(dist)}m). Batas maksimum adalah ${GEOFENCE_RADIUS}m.`
+        description: `Anda berada di luar radius kantor (${Number.isFinite(dist) ? Math.round(dist) : 0}m). Batas maksimum adalah ${GEOFENCE_RADIUS}m.`
       });
       return;
     }
+    isSubmittingRef.current = true;
     try {
       setLoading(true);
       await saveClockOut(coords);
       
-      const today = new Date().toISOString().split("T")[0];
+      const today = getLocalDateString();
       const { data } = await supabase
         .schema("hr")
         .from("attendance")
@@ -259,24 +291,31 @@ export default function EmployeeHome() {
       
       setFlowState("success");
       toast.success("Absen Pulang Berhasil!");
-    } catch (error: any) {
-      toast.error("Gagal menyimpan absen pulang", { description: error.message });
+    } catch (error: unknown) {
+      const description = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error("Gagal menyimpan absen pulang", { description });
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
   const handleDevReset = async () => {
+    if (!import.meta.env.DEV) return;
+    if (isSubmittingRef.current || loading) return;
+    isSubmittingRef.current = true;
     try {
       setLoading(true);
       await resetAttendanceDev();
       setTodayRecord(null);
       setFlowState("idle");
       toast.success("Reset absen berhasil");
-    } catch (error: any) {
-      toast.error("Gagal reset absen", { description: error.message });
+    } catch (error: unknown) {
+      const description = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error("Gagal reset absen", { description });
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -299,7 +338,7 @@ export default function EmployeeHome() {
       <div className="absolute inset-0 bg-background z-50 flex flex-col animate-in slide-in-from-bottom-4 duration-300">
         <div className="p-4 flex justify-between items-center border-b border-border">
           <h3 className="font-semibold">{actionType === "in" ? "Konfirmasi Absen Masuk" : "Konfirmasi Absen Pulang"}</h3>
-          <button onClick={() => setFlowState("idle")} className="p-2 bg-muted rounded-full"><ChevronRight className="rotate-180" size={18} /></button>
+          <button onClick={handleCancelConfirm} className="p-2 bg-muted rounded-full"><ChevronRight className="rotate-180" size={18} /></button>
         </div>
         
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -344,7 +383,7 @@ export default function EmployeeHome() {
 
           {/* Action Buttons */}
           <div className="grid grid-cols-2 gap-3 pt-2">
-            <button onClick={() => setFlowState("idle")} className="py-3.5 rounded-xl font-medium text-sm bg-secondary text-secondary-foreground">
+            <button onClick={handleCancelConfirm} className="py-3.5 rounded-xl font-medium text-sm bg-secondary text-secondary-foreground">
               {actionType === "in" ? "Foto Ulang" : "Batal"}
             </button>
             <button 
@@ -571,8 +610,8 @@ export default function EmployeeHome() {
                   Hotel
                 </span>
               </div>
-              <div className="text-base font-bold text-foreground">
-                Cat Hotel
+              <div className="text-base font-bold text-foreground financial-num">
+                {hotelCount} Menginap
               </div>
               <p className="text-[11px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5 group-hover:text-[#3AAD7A] transition-colors">
                 <span>Laporan & Kamar</span>
@@ -582,8 +621,8 @@ export default function EmployeeHome() {
           </div>
         </div>
 
-        {/* Dev Action */}
-        {todayRecord && (
+        {/* Dev Action (Development Only) */}
+        {import.meta.env.DEV && todayRecord && (
           <button
             onClick={handleDevReset}
             className="w-full py-2.5 rounded-2xl text-xs flex items-center justify-center gap-2 text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/20 font-semibold transition-colors"

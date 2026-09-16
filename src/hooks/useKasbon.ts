@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import type { Kasbon } from '@/types'
@@ -24,6 +24,10 @@ export function useKasbon(userId: string | undefined): UseKasbonReturn {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Mutex and sequence tracking
+  const isSubmittingRef = useRef(false)
+  const fetchSeqRef = useRef(0)
 
   const getMonthStart = () => {
     const now = new Date()
@@ -83,6 +87,7 @@ export function useKasbon(userId: string | undefined): UseKasbonReturn {
       setLoading(false)
       return
     }
+    const currentSeq = ++fetchSeqRef.current
     try {
       setError(null)
       const [limit, used, hist] = await Promise.all([
@@ -90,20 +95,34 @@ export function useKasbon(userId: string | undefined): UseKasbonReturn {
         fetchUsedThisMonth(),
         fetchHistory(),
       ])
+      // Avoid out-of-order race conditions
+      if (currentSeq !== fetchSeqRef.current) return
+
       setKasbonLimit(limit)
       setUsedThisMonth(used)
       setHistory(hist)
     } catch (err) {
       console.error('Error loading kasbon data:', err)
-      setError('Gagal memuat data kasbon')
+      if (currentSeq === fetchSeqRef.current) {
+        setError('Gagal memuat data kasbon')
+      }
     } finally {
-      setLoading(false)
-      setRefreshing(false)
+      if (currentSeq === fetchSeqRef.current) {
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
   }, [userId, fetchKasbonLimit, fetchUsedThisMonth, fetchHistory])
 
   useEffect(() => {
-    loadAll()
+    let active = true
+    void (async () => {
+      await loadAll()
+      if (!active) return
+    })()
+    return () => {
+      active = false
+    }
   }, [loadAll])
 
   const refresh = useCallback(async () => {
@@ -118,56 +137,91 @@ export function useKasbon(userId: string | undefined): UseKasbonReturn {
   ): Promise<{ success: boolean; error?: string }> => {
     if (!userId) return { success: false, error: 'User tidak terautentikasi' }
 
+    if (isSubmittingRef.current) {
+      return { success: false, error: 'Permintaan pengajuan kasbon sedang diproses' }
+    }
+
+    // Amount validation: finite positive integer
+    if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount <= 0) {
+      return { success: false, error: 'Jumlah kasbon harus berupa bilangan bulat positif' }
+    }
+
+    // Reason validation: trimmed and min length >= 5
+    const cleanReason = (reason || '').trim()
+    if (cleanReason.length < 5) {
+      return { success: false, error: 'Alasan pengajuan minimal 5 karakter' }
+    }
+
     // Validate against remaining limit
-    const remaining = kasbonLimit - usedThisMonth
+    const remaining = Math.max(0, kasbonLimit - usedThisMonth)
     if (amount > remaining) {
       return { success: false, error: `Melebihi sisa limit. Sisa: Rp ${remaining.toLocaleString('id-ID')}` }
     }
-    if (amount <= 0) {
-      return { success: false, error: 'Jumlah kasbon harus lebih dari 0' }
+
+    isSubmittingRef.current = true
+    try {
+      const { error: insertError } = await supabase
+        .schema('hr')
+        .from('kasbon')
+        .insert({
+          user_id: userId,
+          amount,
+          reason: cleanReason,
+          category: category || 'Lainnya',
+          status: 'pending',
+          requested_at: new Date().toISOString(),
+        })
+
+      if (insertError) {
+        console.error('Error submitting kasbon:', insertError)
+        return { success: false, error: 'Gagal mengirim pengajuan. Coba lagi.' }
+      }
+
+      await loadAll()
+      return { success: true }
+    } finally {
+      isSubmittingRef.current = false
     }
-
-    const { error: insertError } = await supabase
-      .schema('hr')
-      .from('kasbon')
-      .insert({
-        user_id: userId,
-        amount,
-        reason,
-        category,
-        status: 'pending',
-        requested_at: new Date().toISOString(),
-      })
-
-    if (insertError) {
-      console.error('Error submitting kasbon:', insertError)
-      return { success: false, error: 'Gagal mengirim pengajuan. Coba lagi.' }
-    }
-
-    // Refresh data after successful submission
-    await loadAll()
-    return { success: true }
   }, [userId, kasbonLimit, usedThisMonth, loadAll])
 
   const cancelKasbon = useCallback(async (id: string): Promise<{ success: boolean; error?: string }> => {
     if (!userId) return { success: false, error: 'User tidak terautentikasi' }
 
-    const { error: deleteError } = await supabase
-      .schema('hr')
-      .from('kasbon')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', userId)
-      .eq('status', 'pending')
-
-    if (deleteError) {
-      console.error('Error cancelling kasbon:', deleteError)
-      return { success: false, error: 'Gagal membatalkan pengajuan. Coba lagi.' }
+    if (isSubmittingRef.current) {
+      return { success: false, error: 'Permintaan sedang diproses' }
     }
 
-    await loadAll()
-    return { success: true }
+    isSubmittingRef.current = true
+    try {
+      const { data, error: deleteError } = await supabase
+        .schema('hr')
+        .from('kasbon')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', userId)
+        .eq('status', 'pending')
+        .select()
+
+      if (deleteError) {
+        console.error('Error cancelling kasbon:', deleteError)
+        return { success: false, error: 'Gagal membatalkan pengajuan. Coba lagi.' }
+      }
+
+      if (!data || data.length === 0) {
+        return { success: false, error: 'Pengajuan sudah diproses oleh admin atau tidak ditemukan.' }
+      }
+
+      await loadAll()
+      return { success: true }
+    } finally {
+      isSubmittingRef.current = false
+    }
   }, [userId, loadAll])
+
+  const loadAllRef = useRef(loadAll)
+  useEffect(() => {
+    loadAllRef.current = loadAll
+  }, [loadAll])
 
   useEffect(() => {
     if (!userId) return
@@ -183,16 +237,16 @@ export function useKasbon(userId: string | undefined): UseKasbonReturn {
           filter: `user_id=eq.${userId}`
         },
         (payload) => {
-          console.log('Realtime kasbon change detected:', payload)
-          loadAll()
+          loadAllRef.current()
 
           if (payload.eventType === 'UPDATE') {
             const oldStatus = payload.old?.status
             const newStatus = payload.new?.status
             const amount = payload.new?.amount
             
-            if (oldStatus !== newStatus) {
-              const formattedAmt = `Rp ${Number(amount).toLocaleString('id-ID')}`
+            // Only trigger toast if oldStatus is present and has actually transitioned
+            if (oldStatus && newStatus && oldStatus !== newStatus) {
+              const formattedAmt = `Rp ${Number(amount || 0).toLocaleString('id-ID')}`
               if (newStatus === 'approved') {
                 toast.success(`Kasbon sebesar ${formattedAmt} telah DISETUJUI oleh admin!`)
               } else if (newStatus === 'rejected') {
@@ -209,9 +263,9 @@ export function useKasbon(userId: string | undefined): UseKasbonReturn {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [userId, loadAll])
+  }, [userId])
 
-  const remainingLimit = kasbonLimit - usedThisMonth
+  const remainingLimit = Math.max(0, kasbonLimit - usedThisMonth)
   const pendingCount = history.filter(k => k.status === 'pending').length
 
   return {

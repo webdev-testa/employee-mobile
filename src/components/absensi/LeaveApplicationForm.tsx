@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { ChevronLeft, Paperclip, Send, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -16,11 +16,20 @@ export function LeaveApplicationForm({ onBack, onSuccess }: LeaveApplicationForm
   const [reason, setReason] = useState<string>("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!startDate || !endDate || !reason) {
+    if (isSubmittingRef.current || loading) return;
+
+    const cleanReason = reason.trim();
+    if (!startDate || !endDate || !cleanReason) {
       toast.error("Form tidak lengkap", { description: "Semua kolom wajib diisi." });
+      return;
+    }
+
+    if (cleanReason.length < 5) {
+      toast.error("Alasan terlalu pendek", { description: "Alasan pengajuan minimal 5 karakter." });
       return;
     }
 
@@ -29,59 +38,83 @@ export function LeaveApplicationForm({ onBack, onSuccess }: LeaveApplicationForm
       return;
     }
 
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    if (diffDays > 30) {
+      toast.error("Rentang waktu terlalu panjang", { description: "Pengajuan cuti/izin maksimal 30 hari berturut-turut." });
+      return;
+    }
+
+    // Filter weekdays before any storage upload
+    const weekdays: string[] = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      if (d.getDay() !== 0 && d.getDay() !== 6) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        weekdays.push(`${year}-${month}-${day}`);
+      }
+    }
+
+    if (weekdays.length === 0) {
+      toast.info("Pengajuan cuti hanya berlaku di hari kerja (Senin - Jumat)");
+      return;
+    }
+
+    // Whitelist check on attachment before network operations
+    if (attachment) {
+      const ext = attachment.name.split(".").pop()?.toLowerCase();
+      const ALLOWED_EXTS = ["jpg", "jpeg", "png", "webp", "pdf"];
+      if (!ext || !ALLOWED_EXTS.includes(ext)) {
+        toast.error("Format lampiran tidak didukung", {
+          description: "Hanya format JPG, PNG, WEBP, atau PDF yang diperbolehkan.",
+        });
+        return;
+      }
+    }
+
+    isSubmittingRef.current = true;
+    setLoading(true);
+
+    let uploadedFilename: string | null = null;
     try {
-      setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Anda belum login");
 
       let uploadedUrl: string | null = null;
       if (attachment) {
-        const filename = `${user.id}/leave_${Date.now()}_${attachment.name}`;
+        const ext = attachment.name.split(".").pop()?.toLowerCase();
+        uploadedFilename = `${user.id}/leave_${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${ext}`;
         const { error: uploadError } = await supabase
           .storage
           .from("attendance-photos")
-          .upload(filename, attachment);
+          .upload(uploadedFilename, attachment);
 
         if (uploadError) throw uploadError;
 
         const { data: { publicUrl } } = supabase
           .storage
           .from("attendance-photos")
-          .getPublicUrl(filename);
+          .getPublicUrl(uploadedFilename);
         uploadedUrl = publicUrl;
       }
 
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      const insertRows = [];
-
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().split("T")[0];
-        if (d.getDay() !== 0 && d.getDay() !== 6) {
-          insertRows.push({
-            user_id: user.id,
-            date: dateStr,
-            status: `${cutiType}_pending`,
-            is_flagged: true,
-            clock_in_photo_url: uploadedUrl,
-          });
-        }
-      }
-
-      if (insertRows.length === 0) {
-        toast.info("Pengajuan cuti hanya berlaku di hari kerja");
-        return;
-      }
-
-      const dateStrings = insertRows.map((r) => r.date);
-      const { data: existing } = await supabase
+      // Check existing records for overlapping dates
+      const { data: existing, error: checkError } = await supabase
         .schema("hr")
         .from("attendance")
         .select("date")
         .eq("user_id", user.id)
-        .in("date", dateStrings);
+        .in("date", weekdays);
+
+      if (checkError) throw checkError;
 
       if (existing && existing.length > 0) {
+        if (uploadedFilename) {
+          await supabase.storage.from("attendance-photos").remove([uploadedFilename]).catch(() => {});
+        }
         const dates = existing.map((e) => e.date).join(", ");
         toast.error("Gagal mengajukan cuti", {
           description: `Tanggal berikut sudah memiliki riwayat absen/cuti: ${dates}`,
@@ -89,15 +122,30 @@ export function LeaveApplicationForm({ onBack, onSuccess }: LeaveApplicationForm
         return;
       }
 
-      const { error } = await supabase.schema("hr").from("attendance").insert(insertRows);
-      if (error) throw error;
+      const insertRows = weekdays.map((dateStr) => ({
+        user_id: user.id,
+        date: dateStr,
+        status: `${cutiType}_pending`,
+        is_flagged: true,
+        clock_in_photo_url: uploadedUrl,
+      }));
+
+      const { error: insertError } = await supabase.schema("hr").from("attendance").insert(insertRows);
+      if (insertError) {
+        if (uploadedFilename) {
+          await supabase.storage.from("attendance-photos").remove([uploadedFilename]).catch(() => {});
+        }
+        throw insertError;
+      }
 
       toast.success("Pengajuan cuti berhasil dikirim");
       onSuccess();
-    } catch (e: any) {
-      toast.error("Gagal mengirim pengajuan cuti", { description: e.message });
+    } catch (e: unknown) {
+      const description = e instanceof Error ? e.message : 'Terjadi kesalahan sistem';
+      toast.error("Gagal mengirim pengajuan cuti", { description });
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

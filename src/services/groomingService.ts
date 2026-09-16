@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { supabasePos } from '@/lib/supabasePos'
+import { offlineQueue } from '@/lib/offlineQueue'
 import type {
   GroomingSession,
   GroomingProgress,
@@ -268,6 +269,7 @@ export const groomingService = {
 
     const current = getCachedSessions()
     saveCachedSessions([newSession, ...current])
+    offlineQueue.enqueue('grooming_create_session', { ...newSession })
     return newSession
   },
 
@@ -312,10 +314,15 @@ export const groomingService = {
     }
 
     try {
-      await posDb()
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new Error('Device is offline')
+      }
+
+      const { error: sessionErr } = await posDb()
         .from('grooming_sessions')
         .update(updatePayload)
         .eq('id', sessionId)
+      if (sessionErr) throw new Error(sessionErr.message)
 
       const { data: existingProgress } = await posDb()
         .from('grooming_progress')
@@ -325,23 +332,33 @@ export const groomingService = {
         .maybeSingle()
 
       if (!existingProgress) {
-        await posDb().from('grooming_progress').insert({
+        const { error: progInsErr } = await posDb().from('grooming_progress').insert({
           session_id: sessionId,
           step,
           catatan: extra?.catatan || null,
           foto_url: extra?.foto_url || null,
         })
+        if (progInsErr) throw new Error(progInsErr.message)
       } else if (extra?.foto_url || extra?.catatan) {
         const updateData: Record<string, unknown> = {}
         if (extra.foto_url) updateData.foto_url = extra.foto_url
         if (extra.catatan) updateData.catatan = extra.catatan
-        await posDb()
+        const { error: progUpErr } = await posDb()
           .from('grooming_progress')
           .update(updateData)
           .eq('id', existingProgress.id)
+        if (progUpErr) throw new Error(progUpErr.message)
       }
     } catch (e) {
-      console.warn('Update step db error, updating local cache:', e)
+      console.warn('Update step db error, queueing offline mutation:', e)
+      offlineQueue.enqueue('grooming_step_update', {
+        sessionId,
+        step,
+        status: newStatus,
+        catatan: extra?.catatan,
+        foto_url: extra?.foto_url,
+        completedAt: isDone ? updatePayload.waktu_selesai : undefined,
+      })
     }
 
     const sessions = getCachedSessions().map(s => {
@@ -387,12 +404,21 @@ export const groomingService = {
    */
   async toggleSudahBayar(sessionId: string, sudahBayar: boolean): Promise<void> {
     try {
-      await posDb()
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new Error('Device is offline')
+      }
+      const { error } = await posDb()
         .from('grooming_sessions')
         .update({ sudah_bayar: sudahBayar })
         .eq('id', sessionId)
+      if (error) throw error
     } catch (e) {
-      console.warn('toggleSudahBayar DB error, updating local cache:', e)
+      console.warn('toggleSudahBayar DB error, queueing offline mutation:', e)
+      offlineQueue.enqueue('toggle_sudah_bayar', {
+        table: 'grooming_sessions',
+        id: sessionId,
+        sudah_bayar: sudahBayar,
+      })
     }
 
     const sessions = getCachedSessions().map(s =>
@@ -406,12 +432,21 @@ export const groomingService = {
    */
   async markPickedUp(sessionId: string): Promise<void> {
     try {
-      await posDb()
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new Error('Device is offline')
+      }
+      const { error } = await posDb()
         .from('grooming_sessions')
         .update({ status: 'dijemput' })
         .eq('id', sessionId)
+      if (error) throw error
     } catch (e) {
-      console.warn('DB error, updating local cache:', e)
+      console.warn('DB error, queueing offline mutation:', e)
+      offlineQueue.enqueue('grooming_step_update', {
+        sessionId,
+        step: 'done',
+        status: 'dijemput',
+      })
     }
 
     const sessions = getCachedSessions().map(s =>
