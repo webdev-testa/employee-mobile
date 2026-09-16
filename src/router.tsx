@@ -12,6 +12,10 @@ import EmployeeAbsensi from "@/pages/Absensi";
 import EmployeeKasbon from "@/pages/Kasbon";
 import EmployeeProfil from "@/pages/Profil";
 import EmployeeSlipGaji from "@/pages/SlipGaji";
+import GroomingHome from "@/pages/grooming/GroomingHome";
+import GroomingCheckIn from "@/pages/grooming/GroomingCheckIn";
+import GroomingWorkstation from "@/pages/grooming/GroomingWorkstation";
+import HotelHome from "@/pages/hotel/HotelHome";
 import { EmployeeLayout } from "@/components/layout/EmployeeLayout";
 
 // Auth
@@ -155,6 +159,22 @@ export const router = createBrowserRouter([
                   {
                     path: "/employee/absensi",
                     element: <EmployeeAbsensi />,
+                  },
+                  {
+                    path: "/employee/grooming",
+                    element: <GroomingHome />,
+                  },
+                  {
+                    path: "/employee/grooming/checkin",
+                    element: <GroomingCheckIn />,
+                  },
+                  {
+                    path: "/employee/grooming/work",
+                    element: <GroomingWorkstation />,
+                  },
+                  {
+                    path: "/employee/hotel",
+                    element: <HotelHome />,
                   },
                   {
                     path: "/employee/kasbon",

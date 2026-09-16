@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 import { supabase } from "@/lib/supabase";
+import { groomingService } from "@/services/groomingService";
 import { useClockIn, useClockOut } from "@/hooks/useAbsensi";
 import { useAuth } from "@/hooks/useAuth";
 import { useKasbon } from "@/hooks/useKasbon";
@@ -16,6 +18,8 @@ import {
   Bell,
   Wallet,
   FileText,
+  Scissors,
+  Building2,
 } from "lucide-react";
 
 type FlowState = "idle" | "confirm" | "success";
@@ -44,13 +48,45 @@ export default function EmployeeHome() {
   const [coords, setCoords] = useState<GeolocationCoordinates | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
+  // Cleanup object URL to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (photoUrl) {
+        URL.revokeObjectURL(photoUrl);
+      }
+    };
+  }, [photoUrl]);
+
+  const updatePhotoUrl = (newUrl: string | null) => {
+    setPhotoUrl(prev => {
+      if (prev && prev !== newUrl) {
+        URL.revokeObjectURL(prev);
+      }
+      return newUrl;
+    });
+  };
+
   const { usedThisMonth: usedKasbon, kasbonLimit } = useKasbon(authUser?.id);
   const [salary, setSalary] = useState(0);
+  const [groomingCount, setGroomingCount] = useState(0);
 
   const mapRef = useRef<HTMLDivElement>(null);
 
   const { capturePhoto, getLocation, saveAttendance } = useClockIn();
   const { saveClockOut, resetAttendanceDev } = useClockOut();
+
+  useEffect(() => {
+    let mounted = true;
+    groomingService.fetchSessions().then(sessions => {
+      if (mounted) {
+        const active = sessions.filter(s => s.status === 'antrian' || s.status === 'dikerjakan');
+        setGroomingCount(active.length);
+      }
+    }).catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
   const isCutiActive = !!(
     todayRecord &&
     ["cuti", "izin", "sakit", "cuti_pending", "izin_pending", "sakit_pending"].includes(todayRecord.status)
@@ -129,7 +165,7 @@ export default function EmployeeHome() {
 
       setPhotoBlob(photo);
       setCoords(loc);
-      setPhotoUrl(URL.createObjectURL(photo));
+      updatePhotoUrl(URL.createObjectURL(photo));
       setActionType("in");
       setFlowState("confirm");
     } catch (error: any) {
@@ -152,7 +188,7 @@ export default function EmployeeHome() {
 
       setPhotoBlob(null);
       setCoords(loc);
-      setPhotoUrl(null);
+      updatePhotoUrl(null);
       setActionType("out");
       setFlowState("confirm");
     } catch (error: any) {
@@ -185,6 +221,8 @@ export default function EmployeeHome() {
         .eq("date", today)
         .maybeSingle();
       setTodayRecord(data || null);
+      updatePhotoUrl(null);
+      setPhotoBlob(null);
       
       setFlowState("success");
       toast.success("Absen Masuk Berhasil!");
@@ -489,6 +527,58 @@ export default function EmployeeHome() {
               <div className="h-full bg-emerald-600 rounded-full transition-all duration-500" style={{ width: `${salary > 0 ? Math.max(0, Math.min(((salary - usedKasbon) / salary) * 100, 100)) : 100}%` }}></div>
             </div>
             <p className="text-[11px] text-muted-foreground font-medium">Take home pay</p>
+          </div>
+        </div>
+
+        {/* Operasional Klinik & Salon Cards */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase font-mono text-muted-foreground tracking-wider">
+              Aktivitas Klinik Hari Ini
+            </h3>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Link
+              to="/employee/grooming"
+              className="p-3.5 bg-card border border-border/80 rounded-2xl shadow-xs hover:border-[#F5A940]/50 transition-all block group"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-8 h-8 rounded-xl bg-[#F5A940]/15 text-[#F5A940] flex items-center justify-center">
+                  <Scissors size={16} />
+                </div>
+                <span className="text-[10px] font-semibold text-[#F5A940] bg-[#F5A940]/10 px-2 py-0.5 rounded-full">
+                  Grooming
+                </span>
+              </div>
+              <div className="text-base font-bold text-foreground financial-num">
+                {groomingCount} Kucing
+              </div>
+              <p className="text-[11px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5 group-hover:text-[#F5A940] transition-colors">
+                <span>Buka antrian</span>
+                <ChevronRight size={12} />
+              </p>
+            </Link>
+
+            <Link
+              to="/employee/hotel"
+              className="p-3.5 bg-card border border-border/80 rounded-2xl shadow-xs hover:border-[#3AAD7A]/50 transition-all block group"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-8 h-8 rounded-xl bg-[#3AAD7A]/15 text-[#3AAD7A] flex items-center justify-center">
+                  <Building2 size={16} />
+                </div>
+                <span className="text-[10px] font-semibold text-[#3AAD7A] bg-[#3AAD7A]/10 px-2 py-0.5 rounded-full">
+                  Hotel
+                </span>
+              </div>
+              <div className="text-base font-bold text-foreground">
+                Cat Hotel
+              </div>
+              <p className="text-[11px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5 group-hover:text-[#3AAD7A] transition-colors">
+                <span>Laporan & Kamar</span>
+                <ChevronRight size={12} />
+              </p>
+            </Link>
           </div>
         </div>
 
