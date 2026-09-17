@@ -62,17 +62,20 @@ export default function GroomingWorkstation() {
     sessions[0] ||
     null
 
-  // Keep activeSessionId in sync if passed via URL
+  const hasInitializedRef = useRef(false)
+  const [isSendingWa, setIsSendingWa] = useState(false)
+
+  // Keep activeSessionId in sync if passed via URL on initial mount
   useEffect(() => {
-    if (!initialSessionId) return
-    const timer = setTimeout(() => {
+    if (!initialSessionId || hasInitializedRef.current) return
+    const found = sessions.find(s => s.id === initialSessionId)
+    if (found) {
       setActiveSessionId(initialSessionId)
-      const found = sessions.find(s => s.id === initialSessionId)
-      if (found && (found.status === 'selesai' || found.status === 'dijemput')) {
+      if (found.status === 'selesai' || found.status === 'dijemput') {
         setTab('done')
       }
-    }, 0)
-    return () => clearTimeout(timer)
+      hasInitializedRef.current = true
+    }
   }, [initialSessionId, sessions])
 
   const handleCapturePhoto = async () => {
@@ -105,6 +108,14 @@ export default function GroomingWorkstation() {
   const handleHtmlPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    // Limit format to valid images
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+    if (!ALLOWED_TYPES.includes(file.type.toLowerCase())) {
+      toast.error('Format file harus berupa foto JPEG, PNG, atau WebP')
+      e.target.value = ''
+      return
+    }
 
     // Limit file size to 10MB
     const MAX_SIZE_MB = 10
@@ -150,6 +161,7 @@ export default function GroomingWorkstation() {
       if (res.success) {
         setPhotoBlob(null)
         setPhotoPreview(null)
+        if (fileInputRef.current) fileInputRef.current.value = ''
         setStepNote('')
         toast.success(
           `Step ${GROOMING_STEP_LABELS[targetStep] || targetStep} berhasil disimpan!`
@@ -164,15 +176,20 @@ export default function GroomingWorkstation() {
   }
 
   const handleSendDoneWa = () => {
-    if (!selectedSession) return
-    const reportUrl = getGroomingReportUrl(selectedSession.public_token)
-    const message = generateGroomingDoneWa(selectedSession, reportUrl)
-    const phone = selectedSession.owner?.no_wa
-    if (!phone) {
-      toast.error('Nomor WhatsApp pemilik tidak ditemukan.')
+    if (!selectedSession || isSendingWa) return
+    const cleanPhone = (selectedSession.owner?.no_wa || '').replace(/\D/g, '')
+    if (cleanPhone.length < 8) {
+      toast.error('Nomor WhatsApp pemilik tidak valid (minimal 8 digit).')
       return
     }
-    openWhatsApp(phone, message)
+    setIsSendingWa(true)
+    try {
+      const reportUrl = getGroomingReportUrl(selectedSession.public_token)
+      const message = generateGroomingDoneWa(selectedSession, reportUrl)
+      openWhatsApp(cleanPhone, message)
+    } finally {
+      setTimeout(() => setIsSendingWa(false), 1500)
+    }
   }
 
   return (
@@ -278,7 +295,7 @@ export default function GroomingWorkstation() {
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-foreground truncate">
-                    {session.cat?.nama || 'Kucing'}
+                    {session.cat?.nama?.trim() || 'Kucing'}
                   </div>
                   <div className="text-[10px] text-muted-foreground truncate">{session.paket}</div>
                   <div className="text-[9.5px] font-mono text-[#F5A940] font-semibold flex items-center gap-1 mt-0.5">
@@ -313,7 +330,7 @@ export default function GroomingWorkstation() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <h2 className="text-sm font-bold text-foreground truncate">
-                      {selectedSession.cat?.nama}
+                      {selectedSession.cat?.nama?.trim() || 'Kucing'}
                     </h2>
                     <span className="text-[10px] font-mono px-1.5 py-0.2 bg-muted rounded text-muted-foreground">
                       {selectedSession.cat?.ras || 'Domestic'}
@@ -323,7 +340,7 @@ export default function GroomingWorkstation() {
                     Paket: <strong>{selectedSession.paket}</strong>
                   </div>
                   <div className="text-[11px] text-muted-foreground font-mono truncate">
-                    Owner: {selectedSession.owner?.nama} ({selectedSession.owner?.no_wa})
+                    Owner: {selectedSession.owner?.nama?.trim() || '-'} {selectedSession.owner?.no_wa ? `(${selectedSession.owner.no_wa})` : ''}
                   </div>
                 </div>
               </div>
@@ -396,6 +413,7 @@ export default function GroomingWorkstation() {
                   onClick={() => {
                     setPhotoPreview(null)
                     setPhotoBlob(null)
+                    if (fileInputRef.current) fileInputRef.current.value = ''
                   }}
                   className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2.5 py-1 rounded-lg cursor-pointer"
                 >
@@ -476,7 +494,7 @@ export default function GroomingWorkstation() {
             </div>
 
             {/* BIG SELESAI BUTTON */}
-            {selectedSession.status !== 'dijemput' && (
+            {selectedSession.status !== 'dijemput' && selectedSession.status !== 'dibatalkan' && (
               <Button
                 disabled={isUploading || selectedSession.status === 'selesai'}
                 onClick={() => handleAdvanceStepWithPhoto('done')}
@@ -495,8 +513,9 @@ export default function GroomingWorkstation() {
             {selectedSession.status === 'selesai' && (
               <Button
                 type="button"
+                disabled={isSendingWa}
                 onClick={handleSendDoneWa}
-                className="w-full h-11 bg-[#3AAD7A] hover:bg-[#2b8a60] text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer gap-2 mt-1"
+                className="w-full h-11 bg-[#3AAD7A] hover:bg-[#2b8a60] text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer gap-2 mt-1 disabled:opacity-50"
               >
                 <MessageCircle className="w-4 h-4" />
                 <span>Kirim Notifikasi Siap Dijemput ke WhatsApp Owner</span>
@@ -512,41 +531,48 @@ export default function GroomingWorkstation() {
               </div>
 
               <div className="space-y-2.5">
-                {selectedSession.progress.map((prog, idx) => (
-                  <div
-                    key={prog.id || idx}
-                    className="p-2.5 bg-muted/30 border border-border/60 rounded-xl flex items-start gap-2.5 text-xs"
-                  >
-                    {prog.foto_url ? (
-                      <div className="w-14 h-14 rounded-lg overflow-hidden bg-black shrink-0 border border-border">
-                        <img src={prog.foto_url} alt="" className="w-full h-full object-cover" />
-                      </div>
-                    ) : (
-                      <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-base shrink-0">
-                        {GROOMING_STEP_EMOJI[prog.step] || '🐾'}
-                      </div>
-                    )}
+                {selectedSession.progress.map((prog, idx) => {
+                  const isValidDate = prog.created_at && !isNaN(new Date(prog.created_at).getTime())
+                  const timeDisplay = isValidDate
+                    ? new Date(prog.created_at).toLocaleTimeString('id-ID', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : '-'
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-foreground">
-                          {GROOMING_STEP_LABELS[prog.step] || prog.step}
-                        </span>
-                        <span className="text-[10px] font-mono text-muted-foreground">
-                          {new Date(prog.created_at).toLocaleTimeString('id-ID', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                      </div>
-                      {prog.catatan && (
-                        <div className="text-muted-foreground mt-0.5 text-[11px] leading-relaxed">
-                          {prog.catatan}
+                  return (
+                    <div
+                      key={prog.id || idx}
+                      className="p-2.5 bg-muted/30 border border-border/60 rounded-xl flex items-start gap-2.5 text-xs"
+                    >
+                      {prog.foto_url ? (
+                        <div className="w-14 h-14 rounded-lg overflow-hidden bg-black shrink-0 border border-border">
+                          <img src={prog.foto_url} alt="" className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-base shrink-0">
+                          {GROOMING_STEP_EMOJI[prog.step] || '🐾'}
                         </div>
                       )}
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-foreground">
+                            {GROOMING_STEP_LABELS[prog.step] || prog.step}
+                          </span>
+                          <span className="text-[10px] font-mono text-muted-foreground">
+                            {timeDisplay}
+                          </span>
+                        </div>
+                        {prog.catatan && (
+                          <div className="text-muted-foreground mt-0.5 text-[11px] leading-relaxed">
+                            {prog.catatan}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </Card>
           )}
