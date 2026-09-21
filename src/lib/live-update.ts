@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabase';
  * Every time you create a new OTA release, bump this version
  * before running `bun run build`.
  */
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.3';
 
 const SEMVER_REGEX = /^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$/;
 
