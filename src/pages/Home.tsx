@@ -8,7 +8,13 @@ import { useClockIn, useClockOut, getLocalDateString } from "@/hooks/useAbsensi"
 import { useAuth } from "@/hooks/useAuth";
 import { useKasbon } from "@/hooks/useKasbon";
 import { toast } from "sonner";
-import { isWithinArea, getDistance } from "@/lib/geofence";
+import { 
+  DEFAULT_BRANCHES, 
+  getNearestBranch, 
+  getCachedBranches,
+  saveCachedBranches,
+  type BranchOffice 
+} from "@/lib/geofence";
 
 import {
   MapPin,
@@ -25,10 +31,7 @@ import {
 
 type FlowState = "idle" | "confirm" | "success";
 
-// TODO: Set your actual office coordinates here
-const OFFICE_LAT = -6.19026;
-const OFFICE_LNG = 106.82391;
-const GEOFENCE_RADIUS = 100; // in meters
+const GEOFENCE_RADIUS = 100; // in meters default
 
 function formatCurrencyShort(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 1)}jt`;
@@ -54,6 +57,7 @@ export default function EmployeeHome() {
   const userName = authUser?.name || "Employee";
   const salary = authUser?.salary ?? 0;
   const [loading, setLoading] = useState(false);
+  const [branches, setBranches] = useState<BranchOffice[]>(getCachedBranches);
   const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
   const [actionType, setActionType] = useState<"in" | "out">("in");
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -114,6 +118,31 @@ export default function EmployeeHome() {
         setHotelCount(active.length);
       }
     }).catch(() => {});
+
+    // Fetch active branches from Supabase hr.branches
+    supabase
+      .schema("hr")
+      .from("branches")
+      .select("*")
+      .eq("is_active", true)
+      .then(
+        ({ data, error }) => {
+          if (!error && data && data.length > 0 && mounted) {
+            const formatted: BranchOffice[] = data.map((row: any) => ({
+              id: String(row.id),
+              name: String(row.name || "Cabang"),
+              address: row.address || "",
+              lat: Number(row.lat),
+              lng: Number(row.lng),
+              radius: Number(row.radius) || GEOFENCE_RADIUS,
+              is_active: row.is_active !== false,
+            }));
+            setBranches(formatted);
+            saveCachedBranches(formatted);
+          }
+        },
+        () => {}
+      );
 
     return () => {
       mounted = false;
@@ -227,11 +256,13 @@ export default function EmployeeHome() {
   const handleConfirmClockIn = async () => {
     if (isSubmittingRef.current || loading) return;
     if (!photoBlob || !coords) return;
-    const isOk = isWithinArea(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG, GEOFENCE_RADIUS);
-    if (!isOk) {
-      const dist = getDistance(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG);
+    const nearestEval = getNearestBranch(coords.latitude, coords.longitude, branches);
+    if (!nearestEval?.isInside) {
+      const dist = nearestEval ? Math.round(nearestEval.distance) : 0;
+      const targetBranch = nearestEval?.branch || branches[0] || DEFAULT_BRANCHES[0];
+      const maxRadius = targetBranch.radius || GEOFENCE_RADIUS;
       toast.error("Gagal menyimpan absen", {
-        description: `Anda berada di luar radius kantor (${Number.isFinite(dist) ? Math.round(dist) : 0}m). Batas maksimum adalah ${GEOFENCE_RADIUS}m.`
+        description: `Anda berada di luar radius ${targetBranch.name} (${dist}m). Batas maksimum adalah ${maxRadius}m.`
       });
       return;
     }
@@ -266,11 +297,13 @@ export default function EmployeeHome() {
   const handleConfirmClockOut = async () => {
     if (isSubmittingRef.current || loading) return;
     if (!coords || !todayRecord) return;
-    const isOk = isWithinArea(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG, GEOFENCE_RADIUS);
-    if (!isOk) {
-      const dist = getDistance(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG);
+    const nearestEval = getNearestBranch(coords.latitude, coords.longitude, branches);
+    if (!nearestEval?.isInside) {
+      const dist = nearestEval ? Math.round(nearestEval.distance) : 0;
+      const targetBranch = nearestEval?.branch || branches[0] || DEFAULT_BRANCHES[0];
+      const maxRadius = targetBranch.radius || GEOFENCE_RADIUS;
       toast.error("Gagal menyimpan absen", {
-        description: `Anda berada di luar radius kantor (${Number.isFinite(dist) ? Math.round(dist) : 0}m). Batas maksimum adalah ${GEOFENCE_RADIUS}m.`
+        description: `Anda berada di luar radius ${targetBranch.name} (${dist}m). Batas maksimum adalah ${maxRadius}m.`
       });
       return;
     }
@@ -330,8 +363,10 @@ export default function EmployeeHome() {
     year: "numeric",
   });
 
-  const distance = coords ? getDistance(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG) : null;
-  const inArea = coords ? isWithinArea(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG, GEOFENCE_RADIUS) : false;
+  const nearestEval = coords ? getNearestBranch(coords.latitude, coords.longitude, branches) : null;
+  const distance = nearestEval ? nearestEval.distance : null;
+  const inArea = nearestEval ? nearestEval.isInside : false;
+  const targetBranch = nearestEval?.branch || branches[0] || DEFAULT_BRANCHES[0];
 
   if (flowState === "confirm") {
     return (
@@ -368,10 +403,10 @@ export default function EmployeeHome() {
             </div>
             <div>
               <p className="font-medium text-sm">
-                {coords ? (inArea ? `Dalam Area (${Math.round(distance!)}m)` : `Terlalu Jauh (${Math.round(distance!)}m)`) : 'Menghitung...'}
+                {coords ? (inArea ? `Dalam Area ${targetBranch.name} (${Math.round(distance!)}m)` : `Terlalu Jauh (${Math.round(distance!)}m)`) : 'Menghitung...'}
               </p>
               <p className="text-xs text-muted-foreground">
-                {inArea ? 'Lokasi sesuai dengan area kantor.' : `Batas maksimum adalah ${GEOFENCE_RADIUS}m.`}
+                {inArea ? `Lokasi terverifikasi di area ${targetBranch.name}.` : `Batas maksimum dari ${targetBranch.name} adalah ${targetBranch.radius || GEOFENCE_RADIUS}m.`}
               </p>
             </div>
           </div>
