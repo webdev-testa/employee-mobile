@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { APP_VERSION, getCurrentBundleInfo } from "@/lib/live-update";
 import { LogOut, User, Settings, HelpCircle, ChevronRight, FileText, ChevronLeft, Camera, Loader2 } from "lucide-react";
 
 export default function EmployeeProfil() {
@@ -14,11 +15,16 @@ export default function EmployeeProfil() {
   const [jobTitle, setJobTitle] = useState("-");
   const [department, setDepartment] = useState("-");
   const [joinDate, setJoinDate] = useState("-");
+  const [appVersion, setAppVersion] = useState(APP_VERSION);
   
   const [uploading, setUploading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
+    getCurrentBundleInfo().then((info) => {
+      setAppVersion(info.activeBundleId || info.currentVersion);
+    });
+
     const fetchUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
@@ -257,6 +263,11 @@ export default function EmployeeProfil() {
           <LogOut size={18} />
           Keluar dari Akun
         </button>
+
+        {/* Version Indicator */}
+        <p className="text-[11px] text-muted-foreground/60 text-center mt-3 pb-2 font-medium">
+          Dr. Meow v{appVersion}
+        </p>
       </div>
     </div>
   );
