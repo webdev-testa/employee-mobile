@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Capacitor } from '@capacitor/core';
 import { Link } from "react-router-dom";
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 import { supabase } from "@/lib/supabase";
@@ -8,48 +9,17 @@ import { useClockIn, useClockOut, getLocalDateString } from "@/hooks/useAbsensi"
 import { useAuth } from "@/hooks/useAuth";
 import { useKasbon } from "@/hooks/useKasbon";
 import { toast } from "sonner";
-import { 
-  DEFAULT_BRANCHES, 
-  getNearestBranch, 
-  getCachedBranches,
-  saveCachedBranches,
-  type BranchOffice 
-} from "@/lib/geofence";
+import { evaluateLocation, type BranchOffice } from "@/lib/geofence";
+import type { LocationFix } from '@/types/location';
+import { hasPendingAttendance, recoverAttendance, loadAttendanceForDate, type AttendanceRecord } from '@/services/attendanceService';
+import { SelfieCamera } from '@/components/absensi/SelfieCamera';
+import { MapPin, CheckCircle2, ChevronRight, Camera, RefreshCw, Bell, Wallet, FileText, Scissors, Building2 } from "lucide-react";
 
-import {
-  MapPin,
-  CheckCircle2,
-  ChevronRight,
-  Camera,
-  RefreshCw,
-  Bell,
-  Wallet,
-  FileText,
-  Scissors,
-  Building2,
-} from "lucide-react";
-
-type FlowState = "idle" | "confirm" | "success";
-
-const GEOFENCE_RADIUS = 100; // in meters default
-
+type FlowState = "idle" | "capturing" | "confirm" | "success";
 function formatCurrencyShort(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 1)}jt`;
   if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
   return n.toLocaleString('id-ID');
-}
-
-interface AttendanceRecord {
-  id: string;
-  date: string;
-  clock_in_time: string | null;
-  clock_out_time: string | null;
-  clock_in_lat: number | null;
-  clock_in_lng: number | null;
-  clock_out_lat: number | null;
-  clock_out_lng: number | null;
-  clock_in_photo_url: string | null;
-  status: string;
 }
 
 export default function EmployeeHome() {
@@ -57,299 +27,210 @@ export default function EmployeeHome() {
   const userName = authUser?.name || "Employee";
   const salary = authUser?.salary ?? 0;
   const [loading, setLoading] = useState(false);
-  const [branches, setBranches] = useState<BranchOffice[]>(getCachedBranches);
+  const [branches, setBranches] = useState<BranchOffice[]>([]);
   const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
   const [actionType, setActionType] = useState<"in" | "out">("in");
   const [currentTime, setCurrentTime] = useState(new Date());
-
   const [flowState, setFlowState] = useState<FlowState>("idle");
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
-  const [coords, setCoords] = useState<GeolocationCoordinates | null>(null);
+  const [coords, setCoords] = useState<LocationFix | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-
-  // Cleanup object URL to prevent memory leaks
-  useEffect(() => {
-    return () => {
-      if (photoUrl) {
-        URL.revokeObjectURL(photoUrl);
-      }
-    };
-  }, [photoUrl]);
-
-  const updatePhotoUrl = (newUrl: string | null) => {
-    setPhotoUrl(prev => {
-      if (prev && prev !== newUrl) {
-        URL.revokeObjectURL(prev);
-      }
-      return newUrl;
-    });
-  };
-
+  const [locationMessage, setLocationMessage] = useState('');
+  const [pending, setPending] = useState(false);
+  const [savedRecord, setSavedRecord] = useState<AttendanceRecord | null>(null);
+  const businessDate = getLocalDateString(currentTime);
+  const operation = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+  const nativeCameraOpen = useRef(false);
   const isSubmittingRef = useRef(false);
+  const readGeneration = useRef(0);
+  const { capturePhoto, getLocation, saveAttendance } = useClockIn();
+  const { saveClockOut, resetAttendanceDev } = useClockOut();
+  const updatePhotoUrl = setPhotoUrl;
+  useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
 
-  const handleCancelConfirm = () => {
-    updatePhotoUrl(null);
+  const handleCancelConfirm = useCallback(() => {
+    if (isSubmittingRef.current) return;
+    operation.current?.abort();
+    operation.current = null;
+    setLoading(false);
+    setPhotoUrl(null);
     setPhotoBlob(null);
     setCoords(null);
-    setFlowState("idle");
-  };
+    setFlowState('idle');
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    const hidden = () => {
+      if (!document.hidden || nativeCameraOpen.current) return;
+      operation.current?.abort();
+      setCoords(null);
+    };
+    document.addEventListener('visibilitychange', hidden);
+    return () => { mounted.current = false; operation.current?.abort(); document.removeEventListener('visibilitychange', hidden); };
+  }, [authUser?.id]);
 
   const { usedThisMonth: usedKasbon, kasbonLimit } = useKasbon(authUser?.id);
   const [groomingCount, setGroomingCount] = useState(0);
   const [hotelCount, setHotelCount] = useState(0);
-
   const mapRef = useRef<HTMLDivElement>(null);
 
-  const { capturePhoto, getLocation, saveAttendance } = useClockIn();
-  const { saveClockOut, resetAttendanceDev } = useClockOut();
-
   useEffect(() => {
-    let mounted = true;
+    let active = true;
     groomingService.fetchSessions().then(sessions => {
-      if (mounted) {
-        const active = sessions.filter(s => s.status === 'antrian' || s.status === 'dikerjakan');
-        setGroomingCount(active.length);
-      }
+      if (active) setGroomingCount(sessions.filter(s => s.status === 'antrian' || s.status === 'dikerjakan').length);
     }).catch(() => {});
-
     posService.fetchBookings().then(bookings => {
-      if (mounted) {
-        const active = bookings.filter(b => b.status === 'aktif');
-        setHotelCount(active.length);
-      }
+      if (active) setHotelCount(bookings.filter(b => b.status === 'aktif').length);
     }).catch(() => {});
-
-    // Fetch active branches from Supabase hr.branches
-    supabase
-      .schema("hr")
-      .from("branches")
-      .select("*")
-      .eq("is_active", true)
-      .then(
-        ({ data, error }) => {
-          if (!error && data && data.length > 0 && mounted) {
-            const formatted: BranchOffice[] = data.map((row: any) => ({
-              id: String(row.id),
-              name: String(row.name || "Cabang"),
-              address: row.address || "",
-              lat: Number(row.lat),
-              lng: Number(row.lng),
-              radius: Number(row.radius) || GEOFENCE_RADIUS,
-              is_active: row.is_active !== false,
-            }));
-            setBranches(formatted);
-            saveCachedBranches(formatted);
-          }
-        },
-        () => {}
-      );
-
-    return () => {
-      mounted = false;
-    };
+    supabase.schema('hr').from('branches').select('id,name,lat,lng,radius,is_active').eq('is_active', true)
+      .then(({ data, error }) => { if (active && !error) setBranches((data || []) as BranchOffice[]); });
+    return () => { active = false; };
   }, []);
-  const isCutiActive = !!(
-    todayRecord &&
-    ["cuti", "izin", "sakit", "cuti_pending", "izin_pending", "sakit_pending"].includes(todayRecord.status)
-  );
+  const isCutiActive = !!(todayRecord && ['cuti','izin','sakit','cuti_pending','izin_pending','sakit_pending'].includes(todayRecord.status || ''));
 
   useEffect(() => {
-    if (flowState === "confirm" && coords && mapRef.current) {
-      setOptions({
-        key: import.meta.env.VITE_GOOGLE_MAPS_KEY || "",
-        v: "weekly",
-      });
-
-      Promise.all([
-        importLibrary("maps"),
-        importLibrary("marker")
-      ]).then(([{ Map }, { AdvancedMarkerElement, Marker }]) => {
+    let active = true;
+    if (flowState === 'confirm' && coords && mapRef.current) {
+      setOptions({ key: import.meta.env.VITE_GOOGLE_MAPS_KEY || '', v: 'weekly' });
+      Promise.all([importLibrary('maps'), importLibrary('marker')]).then(([{ Map }, { AdvancedMarkerElement }]) => {
+        if (!active || !mapRef.current) return;
         const position = { lat: coords.latitude, lng: coords.longitude };
-        const map = new Map(mapRef.current!, {
-          center: position,
-          zoom: 17,
-          mapId: "DEMO_MAP_ID",
-          disableDefaultUI: true,
-        });
-
-        if (AdvancedMarkerElement) {
-          new AdvancedMarkerElement({ map, position });
-        } else if (Marker) {
-          new Marker({ map, position });
-        }
-      }).catch(e => console.error("Error loading maps", e));
+        const map = new Map(mapRef.current, { center: position, zoom: 17, mapId: 'DEMO_MAP_ID', disableDefaultUI: true });
+        new AdvancedMarkerElement({ map, position });
+      }).catch(() => {});
     }
+    return () => { active = false; };
   }, [flowState, coords]);
 
   useEffect(() => {
+    let active = true;
+    const generation = ++readGeneration.current;
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-
-    const checkStatus = async () => {
+    void (async () => {
       if (!authUser) return;
-      const today = getLocalDateString();
-      const { data } = await supabase
-        .schema("hr")
-        .from("attendance")
-        .select("*")
-        .eq("user_id", authUser.id)
-        .eq("date", today)
-        .maybeSingle();
+      try {
+        setPending(hasPendingAttendance(authUser.id));
+        const { data } = await supabase.schema('hr').from('attendance').select('*').eq('user_id', authUser.id).eq('date', businessDate).maybeSingle();
+        if (active && generation === readGeneration.current) setTodayRecord(data || null);
+      } catch { /* Storage restrictions must not crash the page. Submission reports them. */ }
+    })();
+    return () => { active = false; clearInterval(timer); };
+  }, [authUser, businessDate]);
 
-      setTodayRecord(data || null);
-    };
-
-    checkStatus();
-    return () => clearInterval(timer);
-  }, [authUser]);
-
+  const begin = () => {
+    if (operation.current || isSubmittingRef.current) return null;
+    const controller = new AbortController();
+    operation.current = controller;
+    setLoading(true);
+    return controller;
+  };
+  const finish = (controller: AbortController) => {
+    if (operation.current !== controller) return;
+    operation.current = null;
+    if (mounted.current) setLoading(false);
+  };
+  const locate = async (controller: AbortController) => {
+    setLocationMessage('Mengambil lokasi presisi...');
+    const fix = await getLocation(controller.signal, value => {
+      if (mounted.current && !controller.signal.aborted) setLocationMessage(`Akurasi lokasi ±${Math.round(value.accuracy)} m. Menunggu lokasi presisi...`);
+    });
+    controller.signal.throwIfAborted();
+    setCoords(fix);
+    setLocationMessage('');
+  };
+  const reportError = (error: unknown) => {
+    if (error instanceof DOMException && error.name === 'AbortError') return;
+    const message = error instanceof Error ? error.message : 'Terjadi kesalahan. Coba lagi.';
+    if (mounted.current) { setLocationMessage(message); toast.error(message); }
+  };
+  const acceptPhoto = async (photo: Blob) => {
+    const controller = begin();
+    if (!controller) return;
+    setPhotoBlob(photo);
+    updatePhotoUrl(URL.createObjectURL(photo));
+    setFlowState('confirm');
+    try { await locate(controller); } catch (error) { reportError(error); } finally { finish(controller); }
+  };
   const handleStartClockIn = async () => {
-    if (todayRecord) {
-      toast.info("Already clocked in");
-      return;
-    }
-
+    if (todayRecord || pending || operation.current || isSubmittingRef.current) return;
+    setActionType('in');
+    if (!Capacitor.isNativePlatform()) { setFlowState('capturing'); return; }
+    const controller = begin();
+    if (!controller) return;
     try {
-      setLoading(true);
-      toast.info("Membuka kamera...");
+      nativeCameraOpen.current = true;
       const photo = await capturePhoto();
-
-      toast.info("Mengambil lokasi GPS...");
-      const loc = await getLocation();
-
+      nativeCameraOpen.current = false;
+      controller.signal.throwIfAborted();
       setPhotoBlob(photo);
-      setCoords(loc);
       updatePhotoUrl(URL.createObjectURL(photo));
-      setActionType("in");
-      setFlowState("confirm");
-    } catch (error: unknown) {
-      const description = error instanceof Error ? error.message : 'Terjadi kesalahan';
-      toast.error("Gagal memulai absen", { description });
-    } finally {
-      setLoading(false);
-    }
+      setFlowState('confirm');
+      await locate(controller);
+    } catch (error) { reportError(error); } finally { nativeCameraOpen.current = false; finish(controller); }
   };
-
   const handleStartClockOut = async () => {
-    if (!todayRecord || todayRecord.clock_out_time) {
-      toast.info("Absen pulang tidak tersedia");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      toast.info("Mengambil lokasi GPS...");
-      const loc = await getLocation();
-
-      setPhotoBlob(null);
-      setCoords(loc);
-      updatePhotoUrl(null);
-      setActionType("out");
-      setFlowState("confirm");
-    } catch (error: unknown) {
-      const description = error instanceof Error ? error.message : 'Terjadi kesalahan';
-      toast.error("Gagal memulai absen pulang", { description });
-    } finally {
-      setLoading(false);
-    }
+    if (!todayRecord?.clock_in_time || todayRecord.clock_out_time || isCutiActive || pending) return;
+    const controller = begin();
+    if (!controller) return;
+    setActionType('out'); setPhotoBlob(null); updatePhotoUrl(null); setFlowState('confirm');
+    try { await locate(controller); } catch (error) { reportError(error); } finally { finish(controller); }
   };
-
-  const handleConfirmClockIn = async () => {
-    if (isSubmittingRef.current || loading) return;
-    if (!photoBlob || !coords) return;
-    const nearestEval = getNearestBranch(coords.latitude, coords.longitude, branches);
-    if (!nearestEval?.isInside) {
-      const dist = nearestEval ? Math.round(nearestEval.distance) : 0;
-      const targetBranch = nearestEval?.branch || branches[0] || DEFAULT_BRANCHES[0];
-      const maxRadius = targetBranch.radius || GEOFENCE_RADIUS;
-      toast.error("Gagal menyimpan absen", {
-        description: `Anda berada di luar radius ${targetBranch.name} (${dist}m). Batas maksimum adalah ${maxRadius}m.`
-      });
-      return;
-    }
+  const refreshLocation = async () => {
+    const controller = begin();
+    if (!controller) return;
+    setCoords(null);
+    try { await locate(controller); } catch (error) { reportError(error); } finally { finish(controller); }
+  };
+  const handleConfirm = async () => {
+    if (!authUser || pending || (actionType === 'in' && !photoBlob)) return;
+    const controller = begin();
+    if (!controller) return;
     isSubmittingRef.current = true;
     try {
-      setLoading(true);
-      await saveAttendance(photoBlob, coords, authUser?.shift);
-      
-      const today = getLocalDateString();
-      const { data } = await supabase
-        .schema("hr")
-        .from("attendance")
-        .select("*")
-        .eq("user_id", authUser!.id)
-        .eq("date", today)
-        .maybeSingle();
-      setTodayRecord(data || null);
-      updatePhotoUrl(null);
-      setPhotoBlob(null);
-      
-      setFlowState("success");
-      toast.success("Absen Masuk Berhasil!");
-    } catch (error: unknown) {
-      const description = error instanceof Error ? error.message : 'Terjadi kesalahan';
-      toast.error("Gagal menyimpan absen", { description });
-    } finally {
-      setLoading(false);
+      const record = actionType === 'in' ? await saveAttendance(authUser.id, photoBlob!, controller.signal) : await saveClockOut(authUser.id, controller.signal);
+      if (!mounted.current) return;
+      ++readGeneration.current;
+      setSavedRecord(record);
+      setTodayRecord(record.date === getLocalDateString() ? record : null);
+      updatePhotoUrl(null); setPhotoBlob(null); setCoords(null); setFlowState('success');
+      toast.success('Absen berhasil disimpan.');
+    } catch (error) { reportError(error); }
+    finally {
       isSubmittingRef.current = false;
+      if (mounted.current) { try { setPending(hasPendingAttendance(authUser.id)); } catch { setPending(true); } }
+      finish(controller);
     }
   };
-
-  const handleConfirmClockOut = async () => {
-    if (isSubmittingRef.current || loading) return;
-    if (!coords || !todayRecord) return;
-    const nearestEval = getNearestBranch(coords.latitude, coords.longitude, branches);
-    if (!nearestEval?.isInside) {
-      const dist = nearestEval ? Math.round(nearestEval.distance) : 0;
-      const targetBranch = nearestEval?.branch || branches[0] || DEFAULT_BRANCHES[0];
-      const maxRadius = targetBranch.radius || GEOFENCE_RADIUS;
-      toast.error("Gagal menyimpan absen", {
-        description: `Anda berada di luar radius ${targetBranch.name} (${dist}m). Batas maksimum adalah ${maxRadius}m.`
-      });
-      return;
-    }
+  const handleConfirmClockIn = handleConfirm;
+  const handleConfirmClockOut = handleConfirm;
+  const checkPending = async () => {
+    if (!authUser) return;
+    const controller = begin();
+    if (!controller) return;
     isSubmittingRef.current = true;
     try {
-      setLoading(true);
-      await saveClockOut(coords);
-      
-      const today = getLocalDateString();
-      const { data } = await supabase
-        .schema("hr")
-        .from("attendance")
-        .select("*")
-        .eq("user_id", authUser!.id)
-        .eq("date", today)
-        .maybeSingle();
-      setTodayRecord(data || null);
-      
-      setFlowState("success");
-      toast.success("Absen Pulang Berhasil!");
-    } catch (error: unknown) {
-      const description = error instanceof Error ? error.message : 'Terjadi kesalahan';
-      toast.error("Gagal menyimpan absen pulang", { description });
-    } finally {
-      setLoading(false);
-      isSubmittingRef.current = false;
-    }
+      const record = await recoverAttendance(authUser.id, controller.signal);
+      if (record && mounted.current) {
+        ++readGeneration.current;
+        setSavedRecord(record);
+        if (record.date === getLocalDateString()) setTodayRecord(record);
+        else {
+          const data = await loadAttendanceForDate(authUser.id, getLocalDateString(), controller.signal);
+          if (mounted.current) setTodayRecord(data || null);
+        }
+        if (!mounted.current) return;
+        setActionType(record.clock_out_time ? 'out' : 'in'); setFlowState('success'); updatePhotoUrl(null); setPhotoBlob(null);
+      }
+    } catch (error) { reportError(error); }
+    finally { isSubmittingRef.current = false; if (mounted.current) setPending(hasPendingAttendance(authUser.id)); finish(controller); }
   };
-
   const handleDevReset = async () => {
-    if (!import.meta.env.DEV) return;
-    if (isSubmittingRef.current || loading) return;
-    isSubmittingRef.current = true;
-    try {
-      setLoading(true);
-      await resetAttendanceDev();
-      setTodayRecord(null);
-      setFlowState("idle");
-      toast.success("Reset absen berhasil");
-    } catch (error: unknown) {
-      const description = error instanceof Error ? error.message : 'Terjadi kesalahan';
-      toast.error("Gagal reset absen", { description });
-    } finally {
-      setLoading(false);
-      isSubmittingRef.current = false;
-    }
+    if (!import.meta.env.DEV || pending) return;
+    const controller = begin();
+    if (!controller) return;
+    try { await resetAttendanceDev(); setTodayRecord(null); setFlowState('idle'); } catch (error) { reportError(error); } finally { finish(controller); }
   };
 
   const timeString = currentTime.toLocaleTimeString([], {
@@ -363,17 +244,19 @@ export default function EmployeeHome() {
     year: "numeric",
   });
 
-  const nearestEval = coords ? getNearestBranch(coords.latitude, coords.longitude, branches) : null;
-  const distance = nearestEval ? nearestEval.distance : null;
-  const inArea = nearestEval ? nearestEval.isInside : false;
-  const targetBranch = nearestEval?.branch || branches[0] || DEFAULT_BRANCHES[0];
+  const nearestEval = evaluateLocation(coords, branches, currentTime.getTime());
+  const distance = nearestEval.distance ?? null;
+  const inArea = nearestEval.accepted;
+  const targetBranch = nearestEval.branch || { name: 'Cabang', radius: 100 };
+
+  if (flowState === 'capturing') return <SelfieCamera onCapture={acceptPhoto} onCancel={handleCancelConfirm} />;
 
   if (flowState === "confirm") {
     return (
       <div className="absolute inset-0 bg-background z-50 flex flex-col animate-in slide-in-from-bottom-4 duration-300">
         <div className="p-4 flex justify-between items-center border-b border-border">
           <h3 className="font-semibold">{actionType === "in" ? "Konfirmasi Absen Masuk" : "Konfirmasi Absen Pulang"}</h3>
-          <button onClick={handleCancelConfirm} className="p-2 bg-muted rounded-full"><ChevronRight className="rotate-180" size={18} /></button>
+          <button disabled={loading} onClick={handleCancelConfirm} className="p-2 bg-muted rounded-full"><ChevronRight className="rotate-180" size={18} /></button>
         </div>
         
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -403,10 +286,10 @@ export default function EmployeeHome() {
             </div>
             <div>
               <p className="font-medium text-sm">
-                {coords ? (inArea ? `Dalam Area ${targetBranch.name} (${Math.round(distance!)}m)` : `Terlalu Jauh (${Math.round(distance!)}m)`) : 'Menghitung...'}
+                {coords ? (inArea ? `Dalam Area ${targetBranch.name} (${Math.round(distance!)}m)` : nearestEval.message) : 'Menghitung...'}
               </p>
               <p className="text-xs text-muted-foreground">
-                {inArea ? `Lokasi terverifikasi di area ${targetBranch.name}.` : `Batas maksimum dari ${targetBranch.name} adalah ${targetBranch.radius || GEOFENCE_RADIUS}m.`}
+                {inArea ? `Lokasi terverifikasi di area ${targetBranch.name}.` : `Batas maksimum dari ${targetBranch.name} adalah ${targetBranch.radius}m.`}
               </p>
             </div>
           </div>
@@ -416,14 +299,17 @@ export default function EmployeeHome() {
             </div>
           )}
 
+          <p role="status" className="text-sm">{locationMessage || nearestEval.message}{coords ? ` Akurasi ±${Math.round(coords.accuracy)} m.` : ''}</p>
+          <button disabled={loading} onClick={refreshLocation} className="min-h-11 w-full rounded-xl border">Coba lokasi lagi</button>
+          {pending && <button disabled={loading} onClick={checkPending} className="min-h-11 w-full rounded-xl border">Periksa pengiriman</button>}
           {/* Action Buttons */}
           <div className="grid grid-cols-2 gap-3 pt-2">
-            <button onClick={handleCancelConfirm} className="py-3.5 rounded-xl font-medium text-sm bg-secondary text-secondary-foreground">
+            <button disabled={loading} onClick={handleCancelConfirm} className="py-3.5 rounded-xl font-medium text-sm bg-secondary text-secondary-foreground">
               {actionType === "in" ? "Foto Ulang" : "Batal"}
             </button>
             <button 
               onClick={actionType === "in" ? handleConfirmClockIn : handleConfirmClockOut}
-              disabled={loading || !inArea}
+              disabled={loading || !inArea || pending}
               className={`py-3.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2 ${loading || !inArea ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary text-primary-foreground'}`}
             >
               {loading ? <RefreshCw className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
@@ -467,13 +353,13 @@ export default function EmployeeHome() {
               {actionType === "in" ? "Jam masuk" : "Jam pulang"}
             </span>
             <span className={`font-medium text-sm ${actionType === "in" ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-400"}`}>
-              {timeString}
+              {savedRecord && new Date((actionType === 'in' ? savedRecord.clock_in_time : savedRecord.clock_out_time) || savedRecord.date).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
             </span>
           </div>
           <div className="flex justify-between items-center py-2">
             <span className="text-xs text-muted-foreground">Koordinat</span>
             <span className="text-xs">
-              {coords?.latitude.toFixed(5)}, {coords?.longitude.toFixed(5)}
+              {actionType === 'in' ? savedRecord?.clock_in_lat : savedRecord?.clock_out_lat}, {actionType === 'in' ? savedRecord?.clock_in_lng : savedRecord?.clock_out_lng}
             </span>
           </div>
         </div>
@@ -490,6 +376,8 @@ export default function EmployeeHome() {
 
   return (
     <div className="flex flex-col h-full bg-background overflow-y-auto pb-24">
+      {pending && <button disabled={loading} onClick={checkPending} className="min-h-11 w-full rounded-xl border p-3">Periksa pengiriman absen sebelumnya</button>}
+
       {/* Header */}
       <div className="p-6 pb-6 flex justify-between items-start bg-[#0c1d2a] text-white rounded-b-3xl shadow-sm">
         <div>

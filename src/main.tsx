@@ -20,5 +20,6 @@ root.render(
 // Then check whether a newer bundle exists.
 void (async () => {
   await markLiveUpdateReady()
-  await checkForUpdates()
+  // Prepare updates for the next launch; never reload during camera/GPS/submission.
+  await checkForUpdates({ autoReload: false })
 })()

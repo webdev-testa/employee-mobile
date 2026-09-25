@@ -64,8 +64,8 @@ export default function ChangePasswordPage() {
       toast.success('Password berhasil diperbarui!')
       // Redirect to home page
       window.location.href = '/employee/home'
-    } catch (err: any) {
-      setError(err.message || 'Gagal memperbarui password')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Gagal memperbarui password')
       setLoading(false)
     }
   }

@@ -37,11 +37,11 @@ vi.mock('@/lib/supabase', () => ({
 }))
 
 describe('LiveUpdate Module (live-update.ts)', () => {
-  let mockSelect: any
-  let mockOrder: any
-  let mockLimit: any
-  let mockSingle: any
-  let mockFrom: any
+  let mockSelect: ReturnType<typeof vi.fn>
+  let mockOrder: ReturnType<typeof vi.fn>
+  let mockLimit: ReturnType<typeof vi.fn>
+  let mockSingle: ReturnType<typeof vi.fn>
+  let mockFrom: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -54,7 +54,7 @@ describe('LiveUpdate Module (live-update.ts)', () => {
 
     vi.mocked(supabase.schema).mockReturnValue({
       from: mockFrom,
-    } as any)
+    } as never)
   })
 
   afterEach(() => {
@@ -117,7 +117,7 @@ describe('LiveUpdate Module (live-update.ts)', () => {
   describe('Native Environment (Android / iOS)', () => {
     beforeEach(() => {
       vi.mocked(Capacitor.isNativePlatform).mockReturnValue(true)
-      vi.mocked(LiveUpdate.getCurrentBundle).mockResolvedValue({ bundleId: undefined } as any)
+      vi.mocked(LiveUpdate.getCurrentBundle).mockResolvedValue({ bundleId: undefined } as never)
     })
 
     it('returns updated: false when no version record is found in database', async () => {
@@ -204,7 +204,7 @@ describe('LiveUpdate Module (live-update.ts)', () => {
     })
 
     it('prevents downgrade when active OTA bundle is newer than database version', async () => {
-      vi.mocked(LiveUpdate.getCurrentBundle).mockResolvedValue({ bundleId: '2.5.0' } as any)
+      vi.mocked(LiveUpdate.getCurrentBundle).mockResolvedValue({ bundleId: '2.5.0' } as never)
       mockSingle.mockResolvedValue({
         data: {
           version: '2.0.0',
@@ -222,7 +222,7 @@ describe('LiveUpdate Module (live-update.ts)', () => {
 
     it('enforces in-flight mutex to block concurrent checkForUpdates calls', async () => {
       // Simulate delayed network query
-      let resolveQuery: (val: any) => void
+      let resolveQuery: (val: unknown) => void
       const queryPromise = new Promise((resolve) => {
         resolveQuery = resolve
       })
@@ -252,8 +252,8 @@ describe('LiveUpdate Module (live-update.ts)', () => {
     it('downloads new bundle when not yet cached, sets next bundle, and reloads by default', async () => {
       mockSingle.mockResolvedValue({
         data: {
-          version: '1.2.0',
-          bundle_url: 'https://example.com/bundle-1.2.0.zip',
+          version: '99.0.0',
+          bundle_url: 'https://example.com/bundle-99.0.0.zip',
           mandatory: true,
           release_notes: 'New grooming module',
         },
@@ -262,24 +262,24 @@ describe('LiveUpdate Module (live-update.ts)', () => {
 
       vi.mocked(LiveUpdate.getBundles).mockResolvedValue({
         bundleIds: ['1.0.0', '1.1.0'],
-      } as any)
-      vi.mocked(LiveUpdate.downloadBundle).mockResolvedValue(undefined as any)
-      vi.mocked(LiveUpdate.setNextBundle).mockResolvedValue(undefined as any)
-      vi.mocked(LiveUpdate.reload).mockResolvedValue(undefined as any)
+      } as never)
+      vi.mocked(LiveUpdate.downloadBundle).mockResolvedValue(undefined as never)
+      vi.mocked(LiveUpdate.setNextBundle).mockResolvedValue(undefined as never)
+      vi.mocked(LiveUpdate.reload).mockResolvedValue(undefined as never)
 
       const result = await checkForUpdates()
 
       expect(LiveUpdate.downloadBundle).toHaveBeenCalledWith({
-        bundleId: '1.2.0',
-        url: 'https://example.com/bundle-1.2.0.zip',
+        bundleId: '99.0.0',
+        url: 'https://example.com/bundle-99.0.0.zip',
       })
       expect(LiveUpdate.setNextBundle).toHaveBeenCalledWith({
-        bundleId: '1.2.0',
+        bundleId: '99.0.0',
       })
       expect(LiveUpdate.reload).toHaveBeenCalledTimes(1)
       expect(result).toEqual({
         updated: true,
-        version: '1.2.0',
+        version: '99.0.0',
         notes: 'New grooming module',
       })
     })
@@ -287,8 +287,8 @@ describe('LiveUpdate Module (live-update.ts)', () => {
     it('skips reloading if autoReload: false is specified (prepares next launch update)', async () => {
       mockSingle.mockResolvedValue({
         data: {
-          version: '1.2.0',
-          bundle_url: 'https://example.com/bundle-1.2.0.zip',
+          version: '99.0.0',
+          bundle_url: 'https://example.com/bundle-99.0.0.zip',
           mandatory: false,
           release_notes: 'Optional update',
         },
@@ -297,15 +297,15 @@ describe('LiveUpdate Module (live-update.ts)', () => {
 
       vi.mocked(LiveUpdate.getBundles).mockResolvedValue({
         bundleIds: [],
-      } as any)
-      vi.mocked(LiveUpdate.downloadBundle).mockResolvedValue(undefined as any)
-      vi.mocked(LiveUpdate.setNextBundle).mockResolvedValue(undefined as any)
+      } as never)
+      vi.mocked(LiveUpdate.downloadBundle).mockResolvedValue(undefined as never)
+      vi.mocked(LiveUpdate.setNextBundle).mockResolvedValue(undefined as never)
 
       const result = await checkForUpdates({ autoReload: false })
 
       expect(LiveUpdate.downloadBundle).toHaveBeenCalled()
       expect(LiveUpdate.setNextBundle).toHaveBeenCalledWith({
-        bundleId: '1.2.0',
+        bundleId: '99.0.0',
       })
       expect(LiveUpdate.reload).not.toHaveBeenCalled()
       expect(result.updated).toBe(true)
@@ -314,8 +314,8 @@ describe('LiveUpdate Module (live-update.ts)', () => {
     it('skips downloading if bundle is already downloaded in local storage', async () => {
       mockSingle.mockResolvedValue({
         data: {
-          version: '1.2.0',
-          bundle_url: 'https://example.com/bundle-1.2.0.zip',
+          version: '99.0.0',
+          bundle_url: 'https://example.com/bundle-99.0.0.zip',
           mandatory: false,
           release_notes: 'Cached update',
         },
@@ -323,21 +323,21 @@ describe('LiveUpdate Module (live-update.ts)', () => {
       })
 
       vi.mocked(LiveUpdate.getBundles).mockResolvedValue({
-        bundleIds: ['1.0.0', '1.2.0'],
-      } as any)
-      vi.mocked(LiveUpdate.setNextBundle).mockResolvedValue(undefined as any)
-      vi.mocked(LiveUpdate.reload).mockResolvedValue(undefined as any)
+        bundleIds: ['1.0.0', '99.0.0'],
+      } as never)
+      vi.mocked(LiveUpdate.setNextBundle).mockResolvedValue(undefined as never)
+      vi.mocked(LiveUpdate.reload).mockResolvedValue(undefined as never)
 
       const result = await checkForUpdates()
 
       expect(LiveUpdate.downloadBundle).not.toHaveBeenCalled()
       expect(LiveUpdate.setNextBundle).toHaveBeenCalledWith({
-        bundleId: '1.2.0',
+        bundleId: '99.0.0',
       })
       expect(LiveUpdate.reload).toHaveBeenCalledTimes(1)
       expect(result).toEqual({
         updated: true,
-        version: '1.2.0',
+        version: '99.0.0',
         notes: 'Cached update',
       })
     })
@@ -355,7 +355,7 @@ describe('LiveUpdate Module (live-update.ts)', () => {
 
       vi.mocked(LiveUpdate.getBundles).mockResolvedValue({
         bundleIds: [],
-      } as any)
+      } as never)
       vi.mocked(LiveUpdate.downloadBundle).mockRejectedValue(new Error('Network timeout downloading ZIP'))
 
       const result = await checkForUpdates()
@@ -366,7 +366,7 @@ describe('LiveUpdate Module (live-update.ts)', () => {
     })
 
     it('markLiveUpdateReady calls LiveUpdate.ready and catches exceptions', async () => {
-      vi.mocked(LiveUpdate.ready).mockResolvedValue({} as any)
+      vi.mocked(LiveUpdate.ready).mockResolvedValue({} as never)
       await markLiveUpdateReady()
       expect(LiveUpdate.ready).toHaveBeenCalledTimes(1)
 
@@ -376,8 +376,8 @@ describe('LiveUpdate Module (live-update.ts)', () => {
     })
 
     it('resetToBuiltInBundle resets and reloads on native, handling errors safely', async () => {
-      vi.mocked(LiveUpdate.reset).mockResolvedValue(undefined as any)
-      vi.mocked(LiveUpdate.reload).mockResolvedValue(undefined as any)
+      vi.mocked(LiveUpdate.reset).mockResolvedValue(undefined as never)
+      vi.mocked(LiveUpdate.reload).mockResolvedValue(undefined as never)
 
       await resetToBuiltInBundle()
       expect(LiveUpdate.reset).toHaveBeenCalledTimes(1)
@@ -389,7 +389,7 @@ describe('LiveUpdate Module (live-update.ts)', () => {
     })
 
     it('getCurrentBundleInfo retrieves active bundleId from LiveUpdate', async () => {
-      vi.mocked(LiveUpdate.getCurrentBundle).mockResolvedValue({ bundleId: '1.2.0' } as any)
+      vi.mocked(LiveUpdate.getCurrentBundle).mockResolvedValue({ bundleId: '1.2.0' } as never)
 
       const info = await getCurrentBundleInfo()
       expect(info).toEqual({

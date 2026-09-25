@@ -1,3 +1,6 @@
+import { Capacitor } from '@capacitor/core';
+import type { Database } from '@/types/database';
+type Payroll = Database['hr']['Tables']['payroll']['Row'];
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
@@ -9,8 +12,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 export default function EmployeeSlipGaji() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [payrolls, setPayrolls] = useState<any[]>([]);
-  const [selectedSlip, setSelectedSlip] = useState<any | null>(null);
+  const [payrolls, setPayrolls] = useState<Payroll[]>([]);
+  const [selectedSlip, setSelectedSlip] = useState<Payroll | null>(null);
   const [showDetail, setShowDetail] = useState(false);
 
   useEffect(() => {
@@ -29,8 +32,8 @@ export default function EmployeeSlipGaji() {
 
         if (error) throw error;
         setPayrolls(data || []);
-      } catch (e: any) {
-        toast.error("Gagal memuat slip gaji", { description: e.message });
+      } catch (e: unknown) {
+        toast.error("Gagal memuat slip gaji", { description: e instanceof Error ? e.message : 'Terjadi kesalahan' });
       } finally {
         setLoading(false);
       }
@@ -39,7 +42,7 @@ export default function EmployeeSlipGaji() {
     fetchPayrolls();
   }, []);
 
-  const formatCurrency = (n: number) => {
+  const formatCurrency = (n: number | null) => {
     return `Rp ${Number(n || 0).toLocaleString("id-ID")}`;
   };
 
@@ -50,8 +53,8 @@ export default function EmployeeSlipGaji() {
     return d.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
   };
 
-  const handlePrint = (item: any) => {
-    if ((window as any).Capacitor?.isNativePlatform?.()) {
+  const handlePrint = (item: Payroll) => {
+    if (Capacitor.isNativePlatform()) {
       toast.info(
         "Fitur cetak tidak didukung di perangkat mobile. Silakan gunakan tangkapan layar (screenshot) untuk menyimpan slip gaji Anda."
       );

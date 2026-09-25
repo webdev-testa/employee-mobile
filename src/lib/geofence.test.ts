@@ -1,7 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { getDistance, isWithinArea } from "./geofence";
+import { getDistance, isWithinArea, evaluateLocation } from "./geofence";
 
 describe("geofence utility", () => {
+  it('uses accuracy and freshness and considers every eligible branch', () => {
+    const fix = { latitude: -8, longitude: 112, accuracy: 10, timestamp: Date.now(), provider: 'web' as const };
+    const branches = [
+      { id: 'small', name: 'Small', lat: -8, lng: 112, radius: 5, is_active: true },
+      { id: 'large', name: 'Large', lat: -8.0003, lng: 112, radius: 100, is_active: true },
+    ];
+    expect(evaluateLocation(fix, branches).branch?.id).toBe('large');
+    expect(evaluateLocation({ ...fix, accuracy: 31 }, branches).accepted).toBe(false);
+    expect(evaluateLocation({ ...fix, timestamp: Date.now() - 16000 }, branches).accepted).toBe(false);
+    expect(evaluateLocation(fix, []).accepted).toBe(false);
+    expect(evaluateLocation(fix, [{ ...branches[0], radius: 10 }]).accepted).toBe(true);
+    expect(evaluateLocation(fix, [{ ...branches[0], radius: 9 }]).accepted).toBe(false);
+    expect(getDistance(null, 112, -8, 112)).toBe(Infinity);
+    expect(getDistance(91, 112, -8, 112)).toBe(Infinity);
+  });
   const OFFICE_LAT = -6.19026;
   const OFFICE_LNG = 106.82391;
 

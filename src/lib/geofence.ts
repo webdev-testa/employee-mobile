@@ -1,7 +1,10 @@
+import { locationProblem, type LocationFix } from '@/types/location';
+
 export function getDistance(
   userLat: number | unknown, userLng: number | unknown,
   officeLat: number | unknown, officeLng: number | unknown
 ): number {
+  if ([userLat, userLng, officeLat, officeLng].some(v => typeof v !== 'number')) return Infinity;
   const uLat = Number(userLat);
   const uLng = Number(userLng);
   const oLat = Number(officeLat);
@@ -9,7 +12,8 @@ export function getDistance(
 
   if (
     !Number.isFinite(uLat) || !Number.isFinite(uLng) ||
-    !Number.isFinite(oLat) || !Number.isFinite(oLng)
+    !Number.isFinite(oLat) || !Number.isFinite(oLng) ||
+    Math.abs(uLat) > 90 || Math.abs(oLat) > 90 || Math.abs(uLng) > 180 || Math.abs(oLng) > 180
   ) {
     return Infinity;
   }
@@ -34,7 +38,7 @@ export function isWithinArea(
   radiusMeters: number = 100
 ): boolean {
   const dist = getDistance(userLat, userLng, officeLat, officeLng);
-  return Number.isFinite(dist) && dist <= radiusMeters;
+  return Number.isFinite(radiusMeters) && radiusMeters > 0 && Number.isFinite(dist) && dist <= radiusMeters;
 }
 
 export interface BranchOffice {
@@ -94,7 +98,7 @@ export function saveCachedBranches(branches: BranchOffice[]): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY_BRANCHES, JSON.stringify(branches));
-  } catch {}
+  } catch { /* Cached branches are optional; authoritative validation uses the server. */ }
 }
 
 export function getNearestBranch(
@@ -128,6 +132,23 @@ export function isWithinAnyBranch(
   userLng: number,
   branches: BranchOffice[] = DEFAULT_BRANCHES
 ): boolean {
-  const result = getNearestBranch(userLat, userLng, branches);
-  return result ? result.isInside : false;
-}
+  return branches.some(b => b.is_active !== false && isWithinArea(userLat, userLng, b.lat, b.lng, b.radius));
+}
+
+export function evaluateLocation(fix: LocationFix | null, branches: BranchOffice[], now = Date.now()) {
+  const problem = fix ? locationProblem(fix, now) : 'Ambil lokasi untuk melanjutkan.';
+  const candidates = fix ? branches
+    .filter(b => b.is_active === true && Number.isFinite(b.radius) && b.radius > 0)
+    .map(branch => ({ branch, distance: getDistance(fix.latitude, fix.longitude, branch.lat, branch.lng) }))
+    .filter(b => Number.isFinite(b.distance))
+    .sort((a, b) => a.distance - b.distance) : [];
+  const match = !problem && fix ? candidates.find(b => b.distance + fix.accuracy <= b.branch.radius) : undefined;
+  const nearest = match || candidates[0];
+  return {
+    accepted: !!match,
+    branch: nearest?.branch,
+    distance: nearest?.distance,
+    message: problem || (match ? 'Lokasi memenuhi batas akurasi dan area cabang.' : !nearest ? 'Tidak ada cabang aktif yang tersedia.'
+      : fix && nearest.distance - fix.accuracy <= nearest.branch.radius ? 'Lokasi belum pasti di dalam area. Coba lokasi lagi.' : 'Anda berada di luar area cabang.'),
+  };
+}

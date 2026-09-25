@@ -32,12 +32,12 @@ function NavTab({ to, icon: Icon, label, activeColorClass }: NavTabProps) {
 export function EmployeeLayout() {
   return (
     <div className="flex justify-center min-h-screen sm:items-center bg-muted/40 font-sans text-sm text-foreground antialiased">
-      <div className="w-full h-screen sm:h-[92vh] sm:max-w-md sm:rounded-3xl sm:shadow-2xl sm:border sm:border-border/60 bg-background overflow-hidden relative flex flex-col transition-all duration-300">
+      <div className="w-full h-dvh sm:h-[92vh] sm:max-w-md sm:rounded-3xl sm:shadow-2xl sm:border sm:border-border/60 bg-background overflow-hidden relative flex flex-col transition-all duration-300">
         {/* OFFLINE STATUS BANNER */}
         <OfflineBanner />
 
         {/* MAIN CONTENT WITH SAFE AREA TOP PADDING */}
-        <main className="flex-1 overflow-y-auto relative flex flex-col h-full pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
+        <main className="flex-1 overflow-y-auto relative flex flex-col h-full pt-[env(safe-area-inset-top,0px)] pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))]">
           <Outlet />
         </main>
 

@@ -70,6 +70,8 @@ export default function GroomingWorkstation() {
     if (!initialSessionId || hasInitializedRef.current) return
     const found = sessions.find(s => s.id === initialSessionId)
     if (found) {
+      // Hydrate the URL selection once, after external sessions arrive.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveSessionId(initialSessionId)
       if (found.status === 'selesai' || found.status === 'dijemput') {
         setTab('done')

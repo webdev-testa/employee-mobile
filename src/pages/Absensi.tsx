@@ -65,7 +65,7 @@ export default function EmployeeAbsensi() {
         .lte("date", lastDayOfMonth);
 
       if (holidaysData) {
-        setHolidaysList(holidaysData.map((h: any) => h.date));
+        setHolidaysList(holidaysData.map((h: { date: string }) => h.date));
       }
 
       const map: Record<string, AttendanceRecord> = {};
@@ -77,14 +77,16 @@ export default function EmployeeAbsensi() {
 
       setAttendanceMap(map);
       setRecordsList(sorted);
-    } catch (e: any) {
-      toast.error("Gagal mengambil data absensi", { description: e.message });
+    } catch (e: unknown) {
+      toast.error("Gagal mengambil data absensi", { description: e instanceof Error ? e.message : 'Terjadi kesalahan' });
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    // Loading begins with the external attendance query on month changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAttendance();
   }, [currentDate]);
 

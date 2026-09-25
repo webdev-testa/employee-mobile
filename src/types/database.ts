@@ -16,6 +16,8 @@ export type Database = {
     Tables: {
       attendance: {
         Row: {
+          clock_in_location: Json | null
+          clock_out_location: Json | null
           clock_in_lat: number | null
           clock_in_lng: number | null
           clock_in_photo_url: string | null
@@ -32,6 +34,8 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          clock_in_location?: Json | null
+          clock_out_location?: Json | null
           clock_in_lat?: number | null
           clock_in_lng?: number | null
           clock_in_photo_url?: string | null
@@ -48,6 +52,8 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          clock_in_location?: Json | null
+          clock_out_location?: Json | null
           clock_in_lat?: number | null
           clock_in_lng?: number | null
           clock_in_photo_url?: string | null
@@ -251,6 +257,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      attendance_submit: {
+        Args: { p_attempt_id: string; p_action: string; p_lat: number; p_lng: number; p_accuracy: number; p_sampled_at: string; p_photo_path?: string | null }
+        Returns: Json
+      }
       current_user_id: { Args: never; Returns: string }
       current_user_role: { Args: never; Returns: string }
     }

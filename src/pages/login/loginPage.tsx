@@ -14,27 +14,11 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
 
-  // if already logged in, redirect immediately
   useEffect(() => {
     if (!authLoading && user) {
-      redirectByRole(user.role)
+      navigate(location.state?.from?.pathname || '/employee/home', { replace: true })
     }
-  }, [user, authLoading])
-
-  const redirectByRole = (role: string) => {
-    const from = location.state?.from?.pathname
-    if (from) {
-      navigate(from, { replace: true })
-      return
-    }
-
-    if (role === 'admin' || role === 'superadmin') {
-      navigate('/employee/home', { replace: true })
-    } else {
-      navigate('/employee/home', { replace: true })
-    }
-  }
-
+  }, [user, authLoading, navigate, location.state])
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     setLoading(true)
@@ -70,9 +54,9 @@ export default function LoginPage() {
         }
         console.log('LoginPage: 5. Profile verification successful')
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('LoginPage: 6. Exception occurred:', err)
-      setError(err.message || 'An unexpected error occurred')
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred')
       setLoading(false)
     }
   }

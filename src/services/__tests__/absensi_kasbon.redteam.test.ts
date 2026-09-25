@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { useKasbon } from '@/hooks/useKasbon'
-import { useClockIn, useClockOut, getLocalDateString } from '@/hooks/useAbsensi'
+import { useClockOut, getLocalDateString } from '@/hooks/useAbsensi'
 import { supabase } from '@/lib/supabase'
 
 vi.mock('@/lib/supabase', () => {
@@ -269,88 +269,7 @@ describe('Red-Team Verification Test Suite - Legacy Absensi & Kasbon Security & 
   // PHASE 3 & 4: ABSENSI CLOCK-IN / OUT & ERROR PATHS
   // ─────────────────────────────────────────────────────────
   describe('Absensi Clock-In / Clock-Out Error Paths & Durability', () => {
-    it('Defect-04: capturePhoto rejects cleanly when user cancels camera picker', async () => {
-      const { capturePhoto } = useClockIn()
-
-      let createdInput: HTMLInputElement | null = null
-      const originalCreateElement = document.createElement.bind(document)
-      vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
-        const el = originalCreateElement(tagName)
-        if (tagName === 'input') {
-          createdInput = el as HTMLInputElement
-        }
-        return el
-      })
-
-      const photoPromise = capturePhoto()
-      expect(createdInput).not.toBeNull()
-
-      // Trigger cancel event
-      const customInput = createdInput as unknown as { oncancel?: (e: Event) => void }
-      customInput.oncancel?.(new Event('cancel'))
-
-      await expect(photoPromise).rejects.toThrow(/Pengambilan foto dibatalkan/i)
-    })
-
-    it('Defect-08: saveClockOut throws error if no clock-in record existed for today', async () => {
-      vi.mocked(supabase.auth.getUser).mockResolvedValue({
-        data: { user: { id: 'user-emp-1' } as unknown as never },
-        error: null,
-      })
-
-      const mockSchema = vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          update: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                // PostgREST returns 0 updated rows
-                select: vi.fn().mockResolvedValue({ data: [], error: null }),
-              }),
-            }),
-          }),
-        }),
-      })
-      vi.mocked(supabase.schema).mockImplementation(mockSchema as unknown as typeof supabase.schema)
-
-      const { saveClockOut } = useClockOut()
-      const dummyCoords = { latitude: -6.19, longitude: 106.82 } as GeolocationCoordinates
-
-      await expect(saveClockOut(dummyCoords)).rejects.toThrow(/Belum ada catatan absen masuk untuk hari ini/i)
-    })
-
-    it('Defect-16: Rolls back storage upload if attendance database insertion fails', async () => {
-      vi.mocked(supabase.auth.getUser).mockResolvedValue({
-        data: { user: { id: 'user-emp-1' } as unknown as never },
-        error: null,
-      })
-
-      const removeStorageSpy = vi.fn().mockResolvedValue({ error: null })
-      const uploadStorageSpy = vi.fn().mockResolvedValue({ error: null })
-      const getPublicUrlSpy = vi.fn().mockReturnValue({ data: { publicUrl: 'https://test.com/photo.jpg' } })
-
-      vi.mocked(supabase.storage.from).mockReturnValue({
-        upload: uploadStorageSpy,
-        getPublicUrl: getPublicUrlSpy,
-        remove: removeStorageSpy,
-      } as unknown as ReturnType<typeof supabase.storage.from>)
-
-      const mockSchema = vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          insert: vi.fn().mockResolvedValue({ error: new Error('Unique constraint violation') }),
-        }),
-      })
-      vi.mocked(supabase.schema).mockImplementation(mockSchema as unknown as typeof supabase.schema)
-
-      const { saveAttendance } = useClockIn()
-      const dummyBlob = new Blob(['fake image content'], { type: 'image/jpeg' })
-      const dummyCoords = { latitude: -6.19, longitude: 106.82 } as GeolocationCoordinates
-
-      await expect(saveAttendance(dummyBlob, dummyCoords, '08:00')).rejects.toThrow(/Unique constraint violation/i)
-
-      // Assert rollback cleanup was executed!
-      expect(removeStorageSpy).toHaveBeenCalledTimes(1)
-    })
-
+    // Camera cancellation and RPC failure/recovery are covered by SelfieCamera and attendanceService tests.
     it('Defect-17: getLocalDateString returns valid local YYYY-MM-DD regardless of UTC offset', () => {
       const fixedDate = new Date(2026, 8, 16, 6, 30, 0) // Sept 16, 2026 06:30 AM
       const formatted = getLocalDateString(fixedDate)
@@ -369,7 +288,7 @@ describe('Red-Team Verification Test Suite - Legacy Absensi & Kasbon Security & 
         Object.assign(import.meta.env, { DEV: false })
 
         const { resetAttendanceDev } = useClockOut()
-        await expect(resetAttendanceDev()).rejects.toThrow(/hanya diizinkan pada environment development/i)
+        await expect(resetAttendanceDev()).rejects.toThrow(/hanya tersedia pada development/i)
 
         Object.assign(import.meta.env, { DEV: originalDev })
       } finally {
