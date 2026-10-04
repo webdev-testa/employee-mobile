@@ -87,3 +87,38 @@ it('ignores an initial read that returns after a committed clock-in', async () =
   await act(() => button('Kembali ke Home').click())
   expect(button('Absen Pulang Sekarang')).toBeTruthy()
 })
+it('renders coba lokasi lagi with margin bottom and confirm container with pb-28 to prevent navbar occlusion', async () => {
+  await render()
+  await act(() => button('Absen Masuk Sekarang').click())
+  const refreshBtn = button('Coba lokasi lagi')
+  expect(refreshBtn).toBeTruthy()
+  expect(refreshBtn.className).toContain('mb-3')
+  const scrollContainer = refreshBtn.closest('.overflow-y-auto')
+  expect(scrollContainer).toBeTruthy()
+  expect(scrollContainer?.className).toContain('pb-28')
+})
+it('renders fallback UI when Google Maps library fails to load', async () => {
+  await render()
+  await act(() => button('Absen Masuk Sekarang').click())
+  await act(async () => {
+    await Promise.resolve()
+  })
+  expect(container.textContent).toContain('Peta tidak dapat dimuat')
+  expect(container.textContent).toContain('-8.00000, 112.00000')
+})
+it('keeps mapRef container mounted and resets mapFailed on refreshLocation or flow restart', async () => {
+  await render()
+  await act(() => button('Absen Masuk Sekarang').click())
+  await act(async () => {
+    await Promise.resolve()
+  })
+  expect(container.textContent).toContain('Peta tidak dapat dimuat')
+  const mapBox = container.querySelector('.h-\\[150px\\]')
+  expect(mapBox).toBeTruthy()
+  await act(() => button('Coba lokasi lagi').click())
+  expect(container.querySelector('.h-\\[150px\\]')).toBeTruthy()
+  await act(() => button('Foto Ulang').click())
+  expect(container.textContent).not.toContain('Peta tidak dapat dimuat')
+})
+
+
