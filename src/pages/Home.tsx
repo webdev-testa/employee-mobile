@@ -38,6 +38,7 @@ export default function EmployeeHome() {
   const [locationMessage, setLocationMessage] = useState('');
   const [pending, setPending] = useState(false);
   const [savedRecord, setSavedRecord] = useState<AttendanceRecord | null>(null);
+  const [mapFailed, setMapFailed] = useState(false);
   const businessDate = getLocalDateString(currentTime);
   const operation = useRef<AbortController | null>(null);
   const mounted = useRef(true);
@@ -57,6 +58,7 @@ export default function EmployeeHome() {
     setPhotoUrl(null);
     setPhotoBlob(null);
     setCoords(null);
+    setMapFailed(false);
     setFlowState('idle');
   }, []);
 
@@ -93,13 +95,32 @@ export default function EmployeeHome() {
   useEffect(() => {
     let active = true;
     if (flowState === 'confirm' && coords && mapRef.current) {
+      setMapFailed(false);
       setOptions({ key: import.meta.env.VITE_GOOGLE_MAPS_KEY || '', v: 'weekly' });
-      Promise.all([importLibrary('maps'), importLibrary('marker')]).then(([{ Map }, { AdvancedMarkerElement }]) => {
+      Promise.all([importLibrary('maps'), importLibrary('marker')]).then(([{ Map }, markerLib]) => {
         if (!active || !mapRef.current) return;
         const position = { lat: coords.latitude, lng: coords.longitude };
-        const map = new Map(mapRef.current, { center: position, zoom: 17, mapId: 'DEMO_MAP_ID', disableDefaultUI: true });
-        new AdvancedMarkerElement({ map, position });
-      }).catch(() => {});
+        try {
+          if (!markerLib.AdvancedMarkerElement) {
+            throw new Error('AdvancedMarkerElement unavailable');
+          }
+          const map = new Map(mapRef.current, { center: position, zoom: 17, mapId: 'DEMO_MAP_ID', disableDefaultUI: true });
+          new markerLib.AdvancedMarkerElement({ map, position });
+          return;
+        } catch (vectorErr) {
+          console.warn('Vector map / AdvancedMarkerElement unavailable, falling back to raster map:', vectorErr);
+        }
+        if (mapRef.current) {
+          mapRef.current.innerHTML = '';
+          const map = new Map(mapRef.current, { center: position, zoom: 17, disableDefaultUI: true });
+          if (markerLib.Marker) {
+            new markerLib.Marker({ map, position });
+          }
+        }
+      }).catch(err => {
+        console.error('Google Maps failed to load:', err);
+        if (active) setMapFailed(true);
+      });
     }
     return () => { active = false; };
   }, [flowState, coords]);
@@ -148,6 +169,7 @@ export default function EmployeeHome() {
   const acceptPhoto = async (photo: Blob) => {
     const controller = begin();
     if (!controller) return;
+    setMapFailed(false);
     setPhotoBlob(photo);
     updatePhotoUrl(URL.createObjectURL(photo));
     setFlowState('confirm');
@@ -156,6 +178,7 @@ export default function EmployeeHome() {
   const handleStartClockIn = async () => {
     if (todayRecord || pending || operation.current || isSubmittingRef.current) return;
     setActionType('in');
+    setMapFailed(false);
     if (!Capacitor.isNativePlatform()) { setFlowState('capturing'); return; }
     const controller = begin();
     if (!controller) return;
@@ -174,13 +197,14 @@ export default function EmployeeHome() {
     if (!todayRecord?.clock_in_time || todayRecord.clock_out_time || isCutiActive || pending) return;
     const controller = begin();
     if (!controller) return;
-    setActionType('out'); setPhotoBlob(null); updatePhotoUrl(null); setFlowState('confirm');
+    setActionType('out'); setPhotoBlob(null); updatePhotoUrl(null); setMapFailed(false); setFlowState('confirm');
     try { await locate(controller); } catch (error) { reportError(error); } finally { finish(controller); }
   };
   const refreshLocation = async () => {
     const controller = begin();
     if (!controller) return;
     setCoords(null);
+    setMapFailed(false);
     try { await locate(controller); } catch (error) { reportError(error); } finally { finish(controller); }
   };
   const handleConfirm = async () => {
@@ -194,7 +218,7 @@ export default function EmployeeHome() {
       ++readGeneration.current;
       setSavedRecord(record);
       setTodayRecord(record.date === getLocalDateString() ? record : null);
-      updatePhotoUrl(null); setPhotoBlob(null); setCoords(null); setFlowState('success');
+      updatePhotoUrl(null); setPhotoBlob(null); setCoords(null); setMapFailed(false); setFlowState('success');
       toast.success('Absen berhasil disimpan.');
     } catch (error) { reportError(error); }
     finally {
@@ -259,7 +283,7 @@ export default function EmployeeHome() {
           <button disabled={loading} onClick={handleCancelConfirm} className="p-2 bg-muted rounded-full"><ChevronRight className="rotate-180" size={18} /></button>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-28">
           {/* Camera Preview */}
           <div className="relative w-full aspect-[3/4] bg-muted rounded-2xl overflow-hidden flex items-center justify-center border border-border">
             {photoUrl ? (
@@ -295,13 +319,27 @@ export default function EmployeeHome() {
           </div>
           {coords && (
             <div className="rounded-xl overflow-hidden border border-border">
-              <div ref={mapRef} className="h-[150px] w-full bg-muted relative" />
+              <div ref={mapRef} className="h-[150px] w-full bg-muted relative">
+                {mapFailed && (
+                  <div className="absolute inset-0 bg-muted/95 backdrop-blur-xs flex flex-col items-center justify-center p-4 text-center gap-2 z-10">
+                    <div className="w-9 h-9 rounded-full bg-background flex items-center justify-center text-muted-foreground shadow-2xs">
+                      <MapPin size={20} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">Peta tidak dapat dimuat</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Koordinat: {coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           <p role="status" className="text-sm">{locationMessage || nearestEval.message}{coords ? ` Akurasi ±${Math.round(coords.accuracy)} m.` : ''}</p>
-          <button disabled={loading} onClick={refreshLocation} className="min-h-11 w-full rounded-xl border">Coba lokasi lagi</button>
-          {pending && <button disabled={loading} onClick={checkPending} className="min-h-11 w-full rounded-xl border">Periksa pengiriman</button>}
+          <button disabled={loading} onClick={refreshLocation} className="min-h-11 w-full rounded-xl border mb-3 font-medium text-sm hover:bg-muted active:scale-[0.99] transition-all">Coba lokasi lagi</button>
+          {pending && <button disabled={loading} onClick={checkPending} className="min-h-11 w-full rounded-xl border mb-3 font-medium text-sm hover:bg-muted active:scale-[0.99] transition-all">Periksa pengiriman</button>}
           {/* Action Buttons */}
           <div className="grid grid-cols-2 gap-3 pt-2">
             <button disabled={loading} onClick={handleCancelConfirm} className="py-3.5 rounded-xl font-medium text-sm bg-secondary text-secondary-foreground">
