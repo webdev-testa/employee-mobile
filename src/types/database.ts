@@ -16,6 +16,8 @@ export type Database = {
     Tables: {
       attendance: {
         Row: {
+          clock_in_location: Json | null
+          clock_out_location: Json | null
           clock_in_lat: number | null
           clock_in_lng: number | null
           clock_in_photo_url: string | null
@@ -32,6 +34,8 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          clock_in_location?: Json | null
+          clock_out_location?: Json | null
           clock_in_lat?: number | null
           clock_in_lng?: number | null
           clock_in_photo_url?: string | null
@@ -48,6 +52,8 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          clock_in_location?: Json | null
+          clock_out_location?: Json | null
           clock_in_lat?: number | null
           clock_in_lng?: number | null
           clock_in_photo_url?: string | null
@@ -72,6 +78,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      holidays: {
+        Row: {
+          created_at: string | null
+          date: string
+          id: string
+          name: string
+          type: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          date: string
+          id?: string
+          name: string
+          type?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          date?: string
+          id?: string
+          name?: string
+          type?: string | null
+        }
+        Relationships: []
       }
       kasbon: {
         Row: {
@@ -124,6 +154,50 @@ export type Database = {
           },
         ]
       }
+      payroll: {
+        Row: {
+          basic_salary: number
+          created_at: string | null
+          id: string
+          incentives: number | null
+          kasbon_deduction: number | null
+          net_salary: number
+          period: string
+          status: string | null
+          user_id: string | null
+        }
+        Insert: {
+          basic_salary?: number
+          created_at?: string | null
+          id?: string
+          incentives?: number | null
+          kasbon_deduction?: number | null
+          net_salary?: number
+          period: string
+          status?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          basic_salary?: number
+          created_at?: string | null
+          id?: string
+          incentives?: number | null
+          kasbon_deduction?: number | null
+          net_salary?: number
+          period?: string
+          status?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           created_at: string | null
@@ -135,6 +209,12 @@ export type Database = {
           role: string | null
           salary: number | null
           status: string | null
+          email: string | null
+          phone: string | null
+          address: string | null
+          jabatan: string | null
+          shift: string | null
+          must_change_password: boolean | null
         }
         Insert: {
           created_at?: string | null
@@ -146,6 +226,12 @@ export type Database = {
           role?: string | null
           salary?: number | null
           status?: string | null
+          email?: string | null
+          phone?: string | null
+          address?: string | null
+          jabatan?: string | null
+          shift?: string | null
+          must_change_password?: boolean | null
         }
         Update: {
           created_at?: string | null
@@ -157,6 +243,12 @@ export type Database = {
           role?: string | null
           salary?: number | null
           status?: string | null
+          email?: string | null
+          phone?: string | null
+          address?: string | null
+          jabatan?: string | null
+          shift?: string | null
+          must_change_password?: boolean | null
         }
         Relationships: []
       }
@@ -165,6 +257,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      attendance_submit: {
+        Args: { p_attempt_id: string; p_action: string; p_lat: number; p_lng: number; p_accuracy: number; p_sampled_at: string; p_photo_path?: string | null }
+        Returns: Json
+      }
       current_user_id: { Args: never; Returns: string }
       current_user_role: { Args: never; Returns: string }
     }
@@ -176,126 +272,3 @@ export type Database = {
     }
   }
 }
-
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
-
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
-
-export type Tables<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
-      Row: infer R
-    }
-    ? R
-    : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
-        Row: infer R
-      }
-      ? R
-      : never
-    : never
-
-export type TablesInsert<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Insert: infer I
-    }
-    ? I
-    : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Insert: infer I
-      }
-      ? I
-      : never
-    : never
-
-export type TablesUpdate<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Update: infer U
-    }
-    ? U
-    : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Update: infer U
-      }
-      ? U
-      : never
-    : never
-
-export type Enums<
-  DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
-> = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
-    : never
-
-export type CompositeTypes<
-  PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
-> = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-    : never
-
-export const Constants = {
-  hr: {
-    Enums: {},
-  },
-} as const

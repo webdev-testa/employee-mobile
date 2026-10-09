@@ -1,185 +1,338 @@
-import { useState } from "react";
-import { ChevronLeft, Info, AlertTriangle, Send, Check, ChevronRight } from "lucide-react";
+import { useState, useRef } from "react";
+import { Info, AlertTriangle, Send, ChevronLeft, Loader2 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useKasbon } from "@/hooks/useKasbon";
+import type { Kasbon as KasbonType } from "@/types";
+import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { LoadingScreen } from "@/components/ui/LoadingScreen";
+import { KasbonStatusBadge } from "@/components/ui/status-badge";
 
-type FlowState = 'idle' | 'form' | 'success';
+type FlowState = 'idle' | 'form' | 'submitting' | 'success' | 'error';
+
+const QUICK_AMOUNTS = [100000, 250000, 500000, 1000000];
+const CATEGORIES = ['Kesehatan', 'Pendidikan', 'Kebutuhan rumah', 'Transportasi', 'Lainnya'];
+
+function formatCurrency(n: number): string {
+  if (n >= 1000000) return `Rp ${(n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 1)}jt`;
+  if (n >= 1000) return `Rp ${(n / 1000).toFixed(0)}k`;
+  return `Rp ${n.toLocaleString('id-ID')}`;
+}
+
+function formatCurrencyFull(n: number): string {
+  return `Rp ${n.toLocaleString('id-ID')}`;
+}
+
+function formatDate(dateStr: string | null): string {
+  if (!dateStr) return '-';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+}
+
+function formatDateFull(dateStr: string | null): string {
+  if (!dateStr) return '-';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) +
+    ' · ' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+}
+
+function getNextMonthReset(): string {
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return `Reset ${next.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`;
+}
 
 export default function Kasbon() {
+  const { user } = useAuth();
+  const {
+    history,
+    usedThisMonth,
+    kasbonLimit,
+    remainingLimit,
+    loading,
+    submitKasbon,
+    cancelKasbon,
+  } = useKasbon(user?.id);
+
+  const isSubmittingRef = useRef(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  const handleCancel = async (id: string) => {
+    if (cancellingId) return;
+    if (window.confirm("Apakah Anda yakin ingin membatalkan pengajuan kasbon ini?")) {
+      try {
+        setCancellingId(id);
+        const result = await cancelKasbon(id);
+        if (result.success) {
+          toast.success("Pengajuan kasbon berhasil dibatalkan");
+        } else {
+          toast.error(result.error || "Gagal membatalkan pengajuan");
+        }
+      } finally {
+        setCancellingId(null);
+      }
+    }
+  };
+
   const [flowState, setFlowState] = useState<FlowState>('idle');
   const [amount, setAmount] = useState<number>(250000);
+  const [reason, setReason] = useState('');
+  const [category, setCategory] = useState(CATEGORIES[0]);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [lastSubmitted, setLastSubmitted] = useState<{ amount: number; reason: string; category: string } | null>(null);
+  const reasonRef = useRef<HTMLInputElement>(null);
 
-  if (flowState === 'form') {
+  const usagePercent = kasbonLimit > 0 ? Math.min((usedThisMonth / kasbonLimit) * 100, 100) : 0;
+  const thisMonthCount = history.filter(k => {
+    if (!k.requested_at || k.status === 'rejected') return false;
+    const now = new Date();
+    const d = new Date(k.requested_at);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }).length;
+
+  const pendingAmount = history
+    .filter(k => k.status === 'pending')
+    .reduce((sum, k) => sum + k.amount, 0);
+
+  const handleSubmit = async () => {
+    if (isSubmittingRef.current || flowState === 'submitting') return;
+
+    const cleanReason = reason.trim();
+    if (!cleanReason || cleanReason.length < 5) {
+      setSubmitError('Alasan pengajuan wajib diisi (minimal 5 karakter)');
+      reasonRef.current?.focus();
+      return;
+    }
+    if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount <= 0) {
+      setSubmitError('Jumlah kasbon harus berupa bilangan bulat positif');
+      return;
+    }
+    if (amount > remainingLimit) {
+      setSubmitError(`Melebihi sisa limit. Sisa: ${formatCurrencyFull(remainingLimit)}`);
+      return;
+    }
+
+    isSubmittingRef.current = true;
+    setSubmitError(null);
+    setFlowState('submitting');
+
+    try {
+      const result = await submitKasbon(amount, cleanReason, category);
+
+      if (result.success) {
+        setLastSubmitted({ amount, reason: cleanReason, category });
+        setFlowState('success');
+        // Reset form
+        setAmount(250000);
+        setReason('');
+        setCategory(CATEGORIES[0]);
+      } else {
+        setSubmitError(result.error ?? 'Terjadi kesalahan');
+        setFlowState('form');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Terjadi kesalahan pada sistem';
+      setSubmitError(msg);
+      setFlowState('form');
+    } finally {
+      isSubmittingRef.current = false;
+    }
+  };
+
+  const openForm = () => {
+    setSubmitError(null);
+    setFlowState('form');
+  };
+
+  // ─── LOADING STATE ────────────────────────────────────
+  if (loading) {
+    return <LoadingScreen message="Memuat data kasbon..." />;
+  }
+
+  // ─── FORM STATE ───────────────────────────────────────
+  if (flowState === 'form' || flowState === 'submitting') {
+    const isSubmitting = flowState === 'submitting';
+    const exceedsLimit = amount > remainingLimit;
+
     return (
-      <div className="flex flex-col min-h-screen bg-[#F0FAFF] font-sans">
+      <div className="flex flex-col h-full bg-background animate-in slide-in-from-right-2 duration-300">
         {/* Header */}
-        <div className="p-6 pb-5 flex items-center gap-3.5">
-          <button 
-            onClick={() => setFlowState('idle')} 
-            className="w-9 h-9 rounded-xl bg-white border border-[#C8E8F5] flex items-center justify-center cursor-pointer text-[#4A7A8A] shrink-0 shadow-sm hover:bg-[#F0FAFF] transition-colors"
-          >
+        <div className="p-4 border-b border-border bg-card sticky top-0 z-10 flex items-center gap-3">
+          <button onClick={() => !isSubmitting && setFlowState('idle')} disabled={isSubmitting} className="p-1 rounded-md hover:bg-muted transition-colors disabled:opacity-50">
             <ChevronLeft size={20} />
           </button>
-          <div className="font-['Syne'] text-[22px] font-bold text-[#1A3A4A] tracking-[-0.3px]">Ajukan Kasbon</div>
+          <h2 className="font-semibold text-lg font-display">Ajukan Kasbon</h2>
         </div>
 
         {/* Body */}
-        <div className="px-5 flex-1 overflow-y-auto hide-scrollbar">
-          {/* Amount */}
-          <div className="bg-white border border-[#C8E8F5] rounded-[22px] p-5 mb-3.5 text-center shadow-sm">
-            <div className="text-[11px] text-[#8ABAC8] uppercase tracking-[1px] font-mono mb-3.5">Jumlah kasbon</div>
-            <div className="font-['Syne'] text-[44px] font-bold text-[#1A3A4A] tracking-[-2px] leading-none mb-4 min-h-[52px] flex items-center justify-center gap-1">
-              <span className="text-[22px] text-[#4A7A8A] font-light self-start mt-2">Rp</span>
-              <span>{amount.toLocaleString('id-ID')}</span>
-              <span className="inline-block w-[2px] h-[40px] bg-[#F5A940] rounded-[1px] animate-pulse ml-0.5 align-middle"></span>
+        <div className="p-4 flex-1 overflow-y-auto space-y-4">
+          {/* Amount Hero */}
+          <div className="bg-card border border-border/80 p-5 rounded-3xl text-center shadow-xs">
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Jumlah Pengajuan Kasbon</p>
+            <div className="text-4xl font-display font-black text-amber-600 dark:text-amber-400 mb-4 flex items-center justify-center gap-1.5 financial-num">
+              <span className="text-2xl text-amber-500 font-bold self-start mt-1">Rp</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={amount === 0 ? "" : amount.toString().replace(/\D/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.')}
+                onChange={e => {
+                  const rawVal = e.target.value.replace(/\D/g, '');
+                  setAmount(rawVal === '' ? 0 : parseInt(rawVal, 10));
+                }}
+                disabled={isSubmitting}
+                className="bg-transparent border-none outline-none p-0 m-0 text-center w-full focus:ring-0 font-extrabold text-foreground"
+              />
             </div>
-            
+
             <div className="flex gap-2 justify-center flex-wrap">
-              {[100000, 250000, 500000, 1000000].map(val => (
-                <button 
+              {QUICK_AMOUNTS.map(val => (
+                <button
                   key={val}
                   onClick={() => setAmount(val)}
-                  className={`px-3.5 py-1.5 rounded-full border text-[12.5px] font-mono cursor-pointer transition-all ${
-                    amount === val 
-                    ? 'bg-[#F5A940]/10 border-[#F5A940]/30 text-[#F5A940]' 
-                    : 'bg-white border-[#C8E8F5] text-[#4A7A8A] hover:bg-[#F0FAFF]'
-                  }`}
+                  disabled={isSubmitting}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                    amount === val
+                    ? 'bg-amber-500 text-white shadow-xs'
+                    : 'border border-border hover:bg-muted text-muted-foreground'
+                  } disabled:opacity-50`}
                 >
-                  {val === 1000000 ? '1jt' : `${val/1000}k`}
+                  {val === 1000000 ? 'Rp 1jt' : `Rp ${val/1000}k`}
                 </button>
               ))}
             </div>
           </div>
 
           {/* Info: approval rule */}
-          <div className="bg-white border border-[#C8E8F5] rounded-[16px] p-3.5 mb-3.5 flex gap-3 items-start shadow-sm">
-            <div className="w-8 h-8 rounded-[10px] flex items-center justify-center shrink-0 bg-[#F5A940]/10 border border-[#F5A940]/30">
-              <Info size={16} className="text-[#F5A940]" />
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex gap-3 items-start">
+            <div className="p-1 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5 font-bold">
+              <Info size={16} />
             </div>
-            <div className="flex-1">
-              <div className="text-[13px] font-medium text-[#1A3A4A] mb-1">Perlu persetujuan admin</div>
-              <div className="text-[12px] text-[#4A7A8A] leading-[1.5]">Kasbon &gt; Rp 200k memerlukan approval dari Fara sebelum bisa dicairkan. Biasanya diproses dalam 1–2 jam kerja.</div>
+            <div className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed font-medium">
+              Kasbon &gt; Rp 200k memerlukan persetujuan admin. Biasanya diproses dalam 1–2 jam kerja.
             </div>
           </div>
 
           {/* Warning: limit */}
-          <div className="bg-[#F87171]/10 border border-[#F87171]/30 rounded-[14px] p-3 mb-3.5 flex gap-2.5 items-start">
-            <AlertTriangle size={16} className="text-[#F87171] shrink-0 mt-[1px]" />
-            <div className="text-[12px] text-[#F87171] leading-[1.5]">Sisa limit kamu <strong className="text-[#1A3A4A]">Rp 500k</strong>. Jumlah kasbon tidak boleh melebihi sisa limit bulan ini.</div>
-          </div>
+          {exceedsLimit ? (
+            <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 flex gap-3 items-start">
+              <div className="p-1 rounded-lg bg-rose-500/20 text-rose-700 dark:text-rose-300 shrink-0 mt-0.5 font-bold">
+                <AlertTriangle size={16} />
+              </div>
+              <div className="text-xs text-rose-900 dark:text-rose-200 leading-relaxed font-medium">
+                Jumlah kasbon <strong>melebihi</strong> sisa limit! Sisa limit kamu <strong className="financial-num">{formatCurrencyFull(remainingLimit)}</strong>.
+              </div>
+            </div>
+          ) : (
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 flex gap-3 items-start">
+              <div className="p-1 rounded-lg bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 shrink-0 mt-0.5 font-bold">
+                <Info size={16} />
+              </div>
+              <div className="text-xs text-emerald-900 dark:text-emerald-200 leading-relaxed font-medium">
+                Sisa limit kasbon bulan ini: <strong className="financial-num">{formatCurrencyFull(remainingLimit)}</strong>.
+              </div>
+            </div>
+          )}
+
+          {/* Submit Error */}
+          {submitError && (
+            <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 flex gap-3 items-start animate-shake">
+              <AlertTriangle size={16} className="text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-rose-800 dark:text-rose-200 leading-relaxed font-semibold">{submitError}</div>
+            </div>
+          )}
 
           {/* Fields */}
-          <div className="flex flex-col gap-3 mb-3.5">
-            <div className="bg-white border border-[#C8E8F5] rounded-[16px] p-3.5 transition-colors focus-within:border-[#8ABAC8] shadow-sm">
-              <div className="text-[10.5px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono mb-1.5">Alasan pengajuan</div>
-              <input 
-                className="bg-transparent border-none outline-none font-sans text-[14px] text-[#1A3A4A] w-full placeholder:text-[#8ABAC8]" 
-                type="text" 
-                placeholder="Biaya berobat, keperluan keluarga, dll..." 
-                defaultValue="Biaya berobat"
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-foreground">Alasan Pengajuan</label>
+              <input
+                ref={reasonRef}
+                className={`w-full p-3.5 rounded-2xl border bg-card text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-all ${
+                  submitError && !reason.trim() ? 'border-destructive' : 'border-border hover:border-muted-foreground/30'
+                }`}
+                type="text"
+                maxLength={200}
+                aria-label="Alasan pengajuan kasbon"
+                placeholder="Biaya kesehatan, keperluan keluarga, dll..."
+                value={reason}
+                onChange={(e) => { setReason(e.target.value); setSubmitError(null); }}
+                disabled={isSubmitting}
               />
             </div>
-            <div className="bg-white border border-[#C8E8F5] rounded-[16px] p-3.5 transition-colors focus-within:border-[#8ABAC8] shadow-sm">
-              <div className="text-[10.5px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono mb-1.5">Kategori</div>
-              <select 
-                className="bg-transparent border-none outline-none font-sans text-[14px] text-[#1A3A4A] w-full appearance-none cursor-pointer" 
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238ABAC8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, 
-                  backgroundRepeat: 'no-repeat', 
-                  backgroundPosition: 'right 0 center', 
-                  paddingRight: '20px'
-                }}
-              >
-                <option>Kesehatan</option>
-                <option>Pendidikan</option>
-                <option>Kebutuhan rumah</option>
-                <option>Transportasi</option>
-                <option>Lainnya</option>
-              </select>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-foreground">Kategori Kebutuhan</label>
+              <Select value={category} onValueChange={setCategory} disabled={isSubmitting}>
+                <SelectTrigger className="w-full p-3.5 h-auto rounded-2xl border border-border bg-card text-sm focus:ring-2 focus:ring-amber-500/30">
+                  <SelectValue placeholder="Pilih kategori" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
-        </div>
 
-        {/* Form Footer */}
-        <div className="p-5 pb-9 bg-[#F0FAFF]">
-          <button 
-            onClick={() => setFlowState('success')} 
-            className="w-full p-4 rounded-[18px] bg-[#F5A940] text-white font-['Syne'] text-[18px] font-bold cursor-pointer transition-all flex items-center justify-center gap-2 hover:bg-[#e09833] hover:scale-[0.98] shadow-[#F5A940]/20 shadow-lg"
+          <button
+            onClick={handleSubmit}
+            disabled={isSubmitting || exceedsLimit}
+            className={`w-full py-3.5 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 shadow-xs transition-all ${
+              isSubmitting || exceedsLimit 
+                ? 'bg-muted text-muted-foreground cursor-not-allowed shadow-none' 
+                : 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white active:scale-[0.98]'
+            }`}
           >
-            <Send size={18} />
-            Kirim Pengajuan
+            {isSubmitting ? (
+              <><Loader2 size={18} className="animate-spin" /> Mengirim Pengajuan...</>
+            ) : (
+              <><Send size={18} /> Kirim Pengajuan Kasbon</>
+            )}
           </button>
         </div>
       </div>
     );
   }
 
-  if (flowState === 'success') {
+  // ─── SUCCESS STATE ────────────────────────────────────
+  if (flowState === 'success' && lastSubmitted) {
     return (
-      <div className="flex flex-col items-center justify-center p-7 text-center min-h-screen bg-[#F0FAFF] font-sans">
-        <div className="w-[110px] h-[110px] rounded-full bg-[#F5A940]/10 border-2 border-[#F5A940]/30 flex items-center justify-center mb-6 relative">
-          <div className="absolute -inset-3 rounded-full border border-[#F5A940]/30 opacity-40"></div>
-          <Send size={40} className="text-[#F5A940] ml-1" />
+      <div className="flex flex-col items-center justify-center p-6 text-center h-full bg-background animate-in zoom-in-95 duration-300">
+        <div className="w-16 h-16 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-4 border border-amber-500/20">
+          <Send size={28} />
         </div>
 
-        <div className="font-['Syne'] text-[26px] font-bold text-[#1A3A4A] mb-2 tracking-[-0.5px]">Pengajuan terkirim!</div>
-        <div className="text-[13.5px] text-[#4A7A8A] mb-7 leading-[1.6]">
-          Kasbon kamu sedang menunggu<br/>persetujuan dari admin.
-        </div>
+        <h2 className="text-2xl font-display font-extrabold mb-1">Pengajuan Terkirim!</h2>
+        <p className="text-xs text-muted-foreground mb-6 max-w-[260px]">
+          Pengajuan kasbon kamu sedang diproses dan menunggu persetujuan admin.
+        </p>
 
-        <div className="w-full bg-white border border-[#C8E8F5] rounded-[20px] p-5 mb-4 text-left shadow-sm">
-          <div className="font-['Syne'] text-[36px] font-bold text-[#F5A940] tracking-[-1px] text-center mb-4">Rp {amount.toLocaleString('id-ID')}</div>
-          
-          <div className="flex justify-between items-center py-2 border-b border-[#F0FAFF]">
-            <div className="text-[12.5px] text-[#4A7A8A]">Tanggal</div>
-            <div className="text-[13px] font-medium text-[#1A3A4A] font-mono">20 Apr 2025 · 08:47</div>
+        <div className="w-full bg-card border border-border/80 rounded-3xl p-5 mb-6 text-left shadow-xs">
+          <div className="text-3xl font-display font-extrabold text-foreground text-center mb-4 financial-num">
+            {formatCurrencyFull(lastSubmitted.amount)}
           </div>
-          <div className="flex justify-between items-center py-2 border-b border-[#F0FAFF]">
-            <div className="text-[12.5px] text-[#4A7A8A]">Alasan</div>
-            <div className="text-[13px] font-medium text-[#1A3A4A] font-mono">Biaya berobat</div>
-          </div>
-          <div className="flex justify-between items-center py-2 border-b border-[#F0FAFF]">
-            <div className="text-[12.5px] text-[#4A7A8A]">Kategori</div>
-            <div className="text-[13px] font-medium text-[#1A3A4A] font-mono">Kesehatan</div>
-          </div>
-          <div className="flex justify-between items-center py-2">
-            <div className="text-[12.5px] text-[#4A7A8A]">Status</div>
-            <div className="text-[13px] font-medium text-[#F5A940] font-mono">Menunggu approval</div>
-          </div>
-        </div>
 
-        <div className="w-full bg-white border border-[#C8E8F5] rounded-[18px] p-5 mb-6 text-left shadow-sm">
-          <div className="text-[11px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono mb-4">Status pengajuan</div>
-          
-          <div className="flex gap-3 relative mb-4">
-            <div className="absolute left-[9px] top-[14px] w-[1px] h-[20px] bg-[#C8E8F5]"></div>
-            <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] bg-[#3AAD7A]/10 text-[#3AAD7A] border border-[#3AAD7A]/30 z-10">
-              <Check size={12} strokeWidth={3} />
-            </div>
-            <div className="text-[13px] text-[#1A3A4A] pt-[1px]">Pengajuan terkirim</div>
+          <div className="flex justify-between items-center py-2.5 border-b border-border/60">
+            <span className="text-xs text-muted-foreground">Waktu Pengajuan</span>
+            <span className="text-xs font-semibold">{formatDateFull(new Date().toISOString())}</span>
           </div>
-          
-          <div className="flex gap-3 relative mb-4">
-            <div className="absolute left-[9px] top-[14px] w-[1px] h-[20px] bg-[#C8E8F5]"></div>
-            <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 bg-[#F5A940]/10 border border-[#F5A940]/30 z-10">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#F5A940]"></div>
-            </div>
-            <div className="text-[13px] text-[#1A3A4A] pt-[1px]">Menunggu persetujuan admin</div>
+          <div className="flex justify-between items-center py-2.5 border-b border-border/60">
+            <span className="text-xs text-muted-foreground">Alasan</span>
+            <span className="text-xs font-semibold truncate max-w-[160px]">{lastSubmitted.reason}</span>
           </div>
-          
-          <div className="flex gap-3 relative mb-4">
-            <div className="absolute left-[9px] top-[14px] w-[1px] h-[20px] bg-[#C8E8F5]"></div>
-            <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] font-mono font-medium bg-white text-[#8ABAC8] border border-[#C8E8F5] z-10">3</div>
-            <div className="text-[13px] text-[#8ABAC8] pt-[1px]">Dana diterima</div>
+          <div className="flex justify-between items-center py-2.5 border-b border-border/60">
+            <span className="text-xs text-muted-foreground">Kategori</span>
+            <span className="text-xs font-semibold">{lastSubmitted.category}</span>
           </div>
-          
-          <div className="flex gap-3 relative">
-            <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] font-mono font-medium bg-white text-[#8ABAC8] border border-[#C8E8F5] z-10">4</div>
-            <div className="text-[13px] text-[#8ABAC8] pt-[1px]">Dipotong dari gaji</div>
+          <div className="flex justify-between items-center py-2.5">
+            <span className="text-xs text-muted-foreground">Status</span>
+            <span className="text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 px-2.5 py-0.5 rounded-full border border-amber-500/20">⏳ Menunggu approval</span>
           </div>
         </div>
 
-        <button 
-          onClick={() => setFlowState('idle')} 
-          className="w-full p-4 rounded-[16px] border border-[#C8E8F5] bg-white text-[#1A3A4A] font-['Syne'] text-[17px] font-bold cursor-pointer transition-all hover:bg-[#F0FAFF] shadow-sm"
+        <button
+          onClick={() => setFlowState('idle')}
+          className="w-full py-3.5 rounded-2xl font-bold bg-primary text-primary-foreground shadow-xs active:scale-[0.98]"
         >
           Kembali ke Kasbon
         </button>
@@ -187,121 +340,126 @@ export default function Kasbon() {
     );
   }
 
+  // ─── IDLE STATE (main page) ───────────────────────────
   return (
-    <div className="bg-[#F0FAFF] flex flex-col font-sans relative min-h-screen">
+    <div className="flex flex-col h-full bg-background overflow-y-auto pb-24">
       {/* Page Header */}
-      <div className="p-6 pb-5">
-        <div className="font-['Syne'] text-[26px] font-bold text-[#1A3A4A] tracking-[-0.5px] mb-1">Kasbon</div>
-        <div className="text-[13px] text-[#4A7A8A]">Gaji di muka · April 2025</div>
-      </div>
-
-      {/* Limit Card */}
-      <div className="mx-5 mb-4 bg-white border border-[#C8E8F5] rounded-[24px] p-5 shadow-sm relative overflow-hidden">
-        {/* Circle decoration */}
-        <div className="absolute -top-[50px] -right-[50px] w-[180px] h-[180px] rounded-full bg-[radial-gradient(circle,rgba(245,169,64,0.1)_0%,transparent_70%)] pointer-events-none"></div>
-
-        <div className="text-[10.5px] text-[#8ABAC8] uppercase tracking-[1px] font-mono mb-2.5 relative z-10">Kasbon terpakai bulan ini</div>
-        
-        <div className="flex items-baseline justify-between mb-3.5 relative z-10">
-          <div className="font-['Syne'] text-[36px] font-bold text-[#F5A940] tracking-[-1px] leading-none">Rp 500k</div>
-          <div className="text-[13px] text-[#8ABAC8] font-mono">limit Rp 1jt</div>
-        </div>
-
-        <div className="h-[6px] bg-[#F0FAFF] rounded-full overflow-hidden mb-2.5 relative z-10">
-          <div className="h-full rounded-full bg-gradient-to-r from-[#F5A940] to-[#f09020] transition-all duration-700" style={{ width: '50%' }}></div>
-        </div>
-
-        <div className="flex justify-between items-center relative z-10">
-          <div className="text-[12.5px] text-[#4A7A8A]">Sisa limit: <strong className="text-[#1A3A4A] font-semibold">Rp 500k</strong></div>
-          <div className="text-[11px] text-[#8ABAC8] font-mono">Reset 1 Mei</div>
-        </div>
-      </div>
-
-      {/* Info Chips */}
-      <div className="mx-5 mb-4 grid grid-cols-2 gap-2.5">
-        <div className="bg-white border border-[#C8E8F5] rounded-[16px] p-3.5 shadow-sm">
-          <div className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono mb-1.5">Pengambilan</div>
-          <div className="font-['Syne'] text-[20px] font-bold text-[#1A3A4A] tracking-[-0.5px] leading-none">2x</div>
-          <div className="text-[11px] text-[#8ABAC8] mt-1">bulan ini</div>
-        </div>
-        <div className="bg-white border border-[#C8E8F5] rounded-[16px] p-3.5 shadow-sm">
-          <div className="text-[10px] text-[#8ABAC8] uppercase tracking-[0.8px] font-mono mb-1.5">Belum dipotong</div>
-          <div className="font-['Syne'] text-[20px] font-bold text-[#F5A940] tracking-[-0.5px] leading-none">Rp 500k</div>
-          <div className="text-[11px] text-[#8ABAC8] mt-1">dari gaji Apr</div>
-        </div>
-      </div>
-
-      {/* Ajukan BTN */}
-      <div className="px-5 mb-5">
+      <div className="p-4 border-b border-border/80 bg-card sticky top-0 z-10 flex justify-between items-center shadow-2xs">
+        <h2 className="font-bold text-lg font-display tracking-tight">Kasbon Karyawan</h2>
         <button 
-          onClick={() => setFlowState('form')} 
-          className="w-full p-4 rounded-[18px] bg-[#F5A940] text-white font-['Syne'] text-[18px] font-bold flex items-center justify-center gap-2 tracking-[-0.3px] hover:bg-[#e09833] transition-all shadow-[#F5A940]/20 shadow-lg"
+          onClick={openForm} 
+          disabled={remainingLimit <= 0} 
+          className="bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95 disabled:opacity-50"
         >
-          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><path d="M12 4v16m8-8H4"/></svg>
-          Ajukan Kasbon
+          + Ajukan Kasbon
         </button>
       </div>
 
-      {/* Riwayat Header */}
-      <div className="flex items-center justify-between px-6 pb-3 pt-1">
-        <div className="text-[12px] font-medium text-[#4A7A8A] uppercase tracking-[0.8px] font-mono">Riwayat</div>
-        <div className="text-[12px] text-[#4DC8F5] cursor-pointer flex items-center gap-1 hover:text-[#3ab4e0] transition-colors">
-          Semua <ChevronRight size={14} />
-        </div>
-      </div>
+      <div className="p-4 space-y-4">
+        {/* Limit Card (Clean Flat Surface) */}
+        <div className="bg-card border border-border/80 rounded-3xl p-5 shadow-xs">
+          <div className="flex justify-between items-center mb-2">
+            <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+              Kasbon Terpakai Bulan Ini
+            </p>
+            <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-2.5 py-0.5 rounded-full">
+              {getNextMonthReset()}
+            </span>
+          </div>
 
-      {/* Riwayat List */}
-      <div className="px-5 flex flex-col gap-2 pb-8">
-        {/* Item 1 */}
-        <div className="flex items-center gap-3 p-3.5 bg-white border border-[#C8E8F5] rounded-[16px] shadow-sm hover:border-[#8ABAC8] transition-colors cursor-pointer">
-          <div className="w-[38px] h-[38px] rounded-xl flex items-center justify-center shrink-0 text-[16px] bg-[#F5A940]/10 border border-[#F5A940]/30">💰</div>
-          <div className="flex-1 min-w-0">
-            <div className="font-['Syne'] text-[17px] font-bold text-[#1A3A4A] tracking-[-0.3px]">Rp 300k</div>
-            <div className="text-[11.5px] text-[#8ABAC8] mt-0.5 truncate">Biaya berobat</div>
+          <div className="flex items-baseline justify-between mb-3">
+            <div className="text-3xl font-display font-black text-foreground financial-num">
+              {formatCurrency(usedThisMonth)}
+            </div>
+            <div className="text-xs text-muted-foreground font-semibold">
+              Limit <strong className="text-foreground financial-num">{formatCurrency(kasbonLimit)}</strong>
+            </div>
           </div>
-          <div className="text-right shrink-0">
-            <div className="text-[11px] text-[#8ABAC8] font-mono mb-1.5">20 Apr</div>
-            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium bg-[#F5A940]/10 text-[#F5A940]">⏳ Menunggu</div>
-          </div>
-        </div>
 
-        {/* Item 2 */}
-        <div className="flex items-center gap-3 p-3.5 bg-white border border-[#C8E8F5] rounded-[16px] shadow-sm hover:border-[#8ABAC8] transition-colors cursor-pointer">
-          <div className="w-[38px] h-[38px] rounded-xl flex items-center justify-center shrink-0 text-[16px] bg-[#3AAD7A]/10 border border-[#3AAD7A]/30 text-[#3AAD7A]">✓</div>
-          <div className="flex-1 min-w-0">
-            <div className="font-['Syne'] text-[17px] font-bold text-[#1A3A4A] tracking-[-0.3px]">Rp 200k</div>
-            <div className="text-[11.5px] text-[#8ABAC8] mt-0.5 truncate">Keperluan darurat</div>
+          <div className="h-2 bg-muted rounded-full overflow-hidden mb-3">
+            <div
+              className="h-full bg-amber-500 rounded-full transition-all duration-700"
+              style={{ width: `${usagePercent}%` }}
+            ></div>
           </div>
-          <div className="text-right shrink-0">
-            <div className="text-[11px] text-[#8ABAC8] font-mono mb-1.5">15 Apr</div>
-            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium bg-[#3AAD7A]/10 text-[#3AAD7A]">✓ Disetujui</div>
-          </div>
-        </div>
 
-        {/* Item 3 */}
-        <div className="flex items-center gap-3 p-3.5 bg-white border border-[#C8E8F5] rounded-[16px] shadow-sm hover:border-[#8ABAC8] transition-colors cursor-pointer">
-          <div className="w-[38px] h-[38px] rounded-xl flex items-center justify-center shrink-0 text-[16px] bg-[#F0FAFF] border border-[#C8E8F5] text-[#8ABAC8]">−</div>
-          <div className="flex-1 min-w-0">
-            <div className="font-['Syne'] text-[17px] font-bold text-[#1A3A4A] tracking-[-0.3px]">Rp 500k</div>
-            <div className="text-[11.5px] text-[#8ABAC8] mt-0.5 truncate">Biaya sekolah anak</div>
-          </div>
-          <div className="text-right shrink-0">
-            <div className="text-[11px] text-[#8ABAC8] font-mono mb-1.5">28 Mar</div>
-            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium bg-[#F0FAFF] border border-[#C8E8F5] text-[#8ABAC8]">Dipotong</div>
+          <div className="flex justify-between items-center">
+            <p className="text-xs text-muted-foreground">
+              Sisa Limit: <strong className="text-foreground font-bold financial-num">{formatCurrency(remainingLimit)}</strong>
+            </p>
+            {pendingAmount > 0 && (
+              <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">({formatCurrency(pendingAmount)} pending)</span>
+            )}
           </div>
         </div>
 
-        {/* Item 4 */}
-        <div className="flex items-center gap-3 p-3.5 bg-white border border-[#C8E8F5] rounded-[16px] shadow-sm hover:border-[#8ABAC8] transition-colors cursor-pointer mb-4">
-          <div className="w-[38px] h-[38px] rounded-xl flex items-center justify-center shrink-0 text-[16px] bg-[#F0FAFF] border border-[#C8E8F5] text-[#8ABAC8]">−</div>
-          <div className="flex-1 min-w-0">
-            <div className="font-['Syne'] text-[17px] font-bold text-[#1A3A4A] tracking-[-0.3px]">Rp 300k</div>
-            <div className="text-[11.5px] text-[#8ABAC8] mt-0.5 truncate">Bayar kos</div>
+        {/* Info Chips */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-xs text-center">
+            <p className="text-[11px] text-muted-foreground font-medium mb-1">Pengambilan</p>
+            <p className="text-2xl font-display font-black text-foreground financial-num">{thisMonthCount}x</p>
+            <p className="text-[10px] text-muted-foreground">Bulan ini</p>
           </div>
-          <div className="text-right shrink-0">
-            <div className="text-[11px] text-[#8ABAC8] font-mono mb-1.5">10 Mar</div>
-            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium bg-[#F0FAFF] border border-[#C8E8F5] text-[#8ABAC8]">Dipotong</div>
+          <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-xs text-center">
+            <p className="text-[11px] text-muted-foreground font-medium mb-1">Belum Dipotong</p>
+            <p className="text-2xl font-display font-black text-amber-600 dark:text-amber-400 financial-num">
+              {formatCurrency(
+                history
+                  .filter(k => k.status === 'approved' || k.status === 'pending')
+                  .reduce((sum, k) => sum + k.amount, 0)
+              )}
+            </p>
+            <p className="text-[10px] text-muted-foreground">Gaji {new Date().toLocaleDateString('id-ID', { month: 'short' })}</p>
           </div>
+        </div>
+
+        {/* Riwayat Header */}
+        <div className="flex items-center justify-between pt-1">
+          <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">Riwayat Pengajuan</h4>
+          <span className="text-[11px] text-muted-foreground font-semibold">{history.length} Transaksi</span>
+        </div>
+
+        {/* Riwayat List */}
+        <div className="space-y-3">
+          {history.length === 0 ? (
+            <div className="bg-card border border-border/80 rounded-2xl p-6 text-center text-muted-foreground shadow-xs">
+              <p className="text-sm font-medium">Belum ada riwayat pengajuan</p>
+              <p className="text-xs mt-0.5">Kasbon yang diajukan akan tercatat di sini</p>
+            </div>
+          ) : (
+            history.map((item: KasbonType) => (
+              <div
+                key={item.id}
+                className="bg-card border border-border/80 rounded-2xl p-4 flex items-center gap-3 shadow-xs hover:border-border transition-all"
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-sm ${
+                  item.status === 'approved' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20' :
+                  item.status === 'rejected' ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/20' :
+                  'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/20'
+                }`}>
+                  {item.status === 'approved' ? '✓' : item.status === 'rejected' ? '✗' : '💰'}
+                </div>
+                
+                <div className="flex-1 min-w-0">
+                  <p className="font-extrabold text-base truncate financial-num text-foreground">{formatCurrencyFull(item.amount)}</p>
+                  <p className="text-xs text-muted-foreground truncate font-medium">{item.reason || item.category || '-'}</p>
+                </div>
+                
+                <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                  <span className="text-[10px] text-muted-foreground font-medium">{formatDate(item.requested_at)}</span>
+                  <KasbonStatusBadge status={item.status} />
+                  {item.status === 'pending' && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleCancel(item.id); }}
+                      className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 hover:underline mt-0.5"
+                    >
+                      Batalkan
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

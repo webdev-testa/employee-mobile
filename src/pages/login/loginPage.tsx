@@ -14,34 +14,19 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
 
-  // if already logged in, redirect immediately
   useEffect(() => {
     if (!authLoading && user) {
-      redirectByRole(user.role)
+      navigate(location.state?.from?.pathname || '/employee/home', { replace: true })
     }
-  }, [user, authLoading])
-
-  const redirectByRole = (role: string) => {
-    const from = location.state?.from?.pathname
-    if (from) {
-      navigate(from, { replace: true })
-      return
-    }
-
-    if (role === 'admin' || role === 'superadmin') {
-      navigate('/admin/dashboard', { replace: true })
-    } else {
-      navigate('/employee/home', { replace: true })
-    }
-  }
-
+  }, [user, authLoading, navigate, location.state])
   const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
     setLoading(true)
     setError('')
     try {
+      console.log('LoginPage: 1. Initiating login with email:', email)
       const { error: loginError, data } = await login(email, password)
-      console.log('Login result:', { error: loginError, data })
+      console.log('LoginPage: 2. Login result:', { error: loginError, userId: data?.user?.id })
 
       if (loginError) {
         setError(loginError.message)
@@ -51,11 +36,15 @@ export default function LoginPage() {
 
       // Check if the user has a profile in our public.users table
       if (data?.user) {
+        console.log('LoginPage: 3. Querying profile for user ID:', data.user.id)
         const { data: profile, error: profileError } = await supabase
+          .schema('hr')
           .from('users')
           .select('role')
           .eq('id', data.user.id)
           .single()
+        
+        console.log('LoginPage: 4. Profile query result:', { profile, profileError })
 
         if (!profile || profileError) {
           setError('Your account is missing a profile or role. Please contact the administrator.')
@@ -63,75 +52,73 @@ export default function LoginPage() {
           setLoading(false)
           return
         }
+        console.log('LoginPage: 5. Profile verification successful')
       }
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred')
+    } catch (err: unknown) {
+      console.error('LoginPage: 6. Exception occurred:', err)
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred')
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-[#F0FAFF] flex items-center justify-center p-6 font-sans selection:bg-[#4DC8F5]/30">
-      <div className="w-full max-w-[420px] bg-white rounded-[16px] shadow-sm border border-[#C8E8F5] p-8 lg:p-10">
+    <div className="flex flex-col h-screen bg-background p-8 justify-center items-center text-center">
+      <div className="mb-10 flex flex-col items-center">
+        <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center text-primary-foreground font-display font-bold text-2xl mb-6 shadow-lg shadow-primary/20">
+          HR
+        </div>
+        <h1 className="text-3xl font-display font-bold mb-2">HadiR Login</h1>
+        <p className="text-muted-foreground">Sign in to your account to continue.</p>
+      </div>
+
+      <form onSubmit={handleLogin} className="space-y-4 w-full max-w-sm text-left">
+        <div>
+          <label className="block text-xs font-medium mb-1.5 text-foreground/80">Email Address</label>
+          <input 
+            type="email" 
+            placeholder="nama@company.com"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+            className="w-full bg-muted border border-transparent rounded-lg px-4 py-3 focus:border-primary focus:bg-background outline-none transition-all"
+          />
+        </div>
         
-        <div className="mb-8 text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#0D2D3D] text-white font-['Syne'] font-bold text-xl mb-4 tracking-tight">
-            HR
+        <div>
+          <label className="block text-xs font-medium mb-1.5 text-foreground/80">Password</label>
+          <div className="relative">
+            <input 
+              type={showPassword ? "text" : "password"} 
+              placeholder="Enter your password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              className="w-full bg-muted border border-transparent rounded-lg px-4 py-3 pr-10 focus:border-primary focus:bg-background outline-none transition-all"
+            />
+            <button 
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer border-none bg-transparent"
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
           </div>
-          <h1 className="font-['Syne'] text-[24px] font-bold tracking-tight text-[#1A3A4A]">HadiR Login</h1>
-          <p className="text-[13.5px] text-[#4A7A8A] mt-1.5">Sign in to your account</p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-[12px] text-[#4A7A8A] font-medium">Email address</label>
-            <input 
-              type="email" 
-              placeholder="nama@drmeow.com"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              className="w-full h-10 px-3.5 rounded-[10px] border border-[#C8E8F5] text-[13.5px] text-[#1A3A4A] placeholder:text-[#8ABAC8] focus:outline-none focus:border-[#1A3A4A] transition-colors"
-            />
+        {error && (
+          <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-[13px] text-destructive">
+            {error}
           </div>
-
-          <div className="space-y-1.5">
-            <label className="text-[12px] text-[#4A7A8A] font-medium">Password</label>
-            <div className="relative">
-              <input 
-                type={showPassword ? "text" : "password"} 
-                placeholder="Enter your password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                className="w-full h-10 pl-3.5 pr-10 rounded-[10px] border border-[#C8E8F5] text-[13.5px] text-[#1A3A4A] placeholder:text-[#8ABAC8] focus:outline-none focus:border-[#1A3A4A] transition-colors"
-              />
-              <button 
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8ABAC8] hover:text-[#4A7A8A] transition-colors"
-              >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </div>
-
-          {error && (
-            <div className="p-3 rounded-[8px] bg-[#F5E8E4] border border-[#e8b4aa] text-[12.5px] text-[#F5A940]">
-              {error}
-            </div>
-          )}
-
-          <button 
-            type="submit" 
-            disabled={loading || !email || !password}
-            className="w-full h-10 mt-2 bg-[#F5A940] hover:bg-[#b03d24] text-white rounded-[10px] text-[13.5px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-          >
-            {loading ? <Loader2 size={16} className="animate-spin" /> : 'Log in'}
-          </button>
-        </form>
-
-      </div>
+        )}
+        
+        <button 
+          type="submit" 
+          disabled={loading || !email || !password}
+          className="w-full bg-primary text-primary-foreground rounded-lg py-3.5 font-medium mt-4 active:scale-[0.98] transition-all disabled:opacity-50 flex justify-center items-center"
+        >
+          {loading ? <Loader2 size={18} className="animate-spin" /> : 'Sign In'}
+        </button>
+      </form>
     </div>
   )
 }

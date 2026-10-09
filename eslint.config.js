@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'android/**/build/**', 'android/app/src/main/assets/**', 'ios/App/App/public/**']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -18,5 +18,10 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      'react-refresh/only-export-components': ['error', { allowConstantExport: true, allowExportNames: ['badgeVariants', 'buttonVariants', 'useAuth'] }],
+    },
   },
+  // This module exports a router instance, not a React component boundary.
+  { files: ['src/router.tsx'], rules: { 'react-refresh/only-export-components': 'off' } },
 ])

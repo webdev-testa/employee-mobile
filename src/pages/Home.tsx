@@ -1,148 +1,260 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Capacitor } from '@capacitor/core';
+import { Link } from "react-router-dom";
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 import { supabase } from "@/lib/supabase";
-import { useClockIn, useClockOut } from "@/hooks/useAbsensi";
+import { groomingService } from "@/services/groomingService";
+import { posService } from "@/services/posService";
+import { useClockIn, useClockOut, getLocalDateString } from "@/hooks/useAbsensi";
+import { useAuth } from "@/hooks/useAuth";
+import { useKasbon } from "@/hooks/useKasbon";
 import { toast } from "sonner";
-import { isWithinArea, getDistance } from "@/lib/geofence";
-import {
-  MapPin,
-  CheckCircle2,
-  ChevronRight,
-  Camera,
-  RefreshCw,
-  Bell,
-} from "lucide-react";
+import { evaluateLocation, type BranchOffice } from "@/lib/geofence";
+import type { LocationFix } from '@/types/location';
+import { hasPendingAttendance, recoverAttendance, loadAttendanceForDate, type AttendanceRecord } from '@/services/attendanceService';
+import { SelfieCamera } from '@/components/absensi/SelfieCamera';
+import { MapPin, CheckCircle2, ChevronRight, Camera, RefreshCw, Bell, Wallet, FileText, Scissors, Building2 } from "lucide-react";
 
-type FlowState = "idle" | "confirm" | "success";
-
-// TODO: Set your actual office coordinates here
-const OFFICE_LAT = -6.200000; 
-const OFFICE_LNG = 106.816666;
-const GEOFENCE_RADIUS = 100; // in meters
+type FlowState = "idle" | "capturing" | "confirm" | "success";
+function formatCurrencyShort(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 1)}jt`;
+  if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
+  return n.toLocaleString('id-ID');
+}
 
 export default function EmployeeHome() {
-  const [userName, setUserName] = useState("Employee");
+  const { user: authUser } = useAuth();
+  const userName = authUser?.name || "Employee";
+  const salary = authUser?.salary ?? 0;
   const [loading, setLoading] = useState(false);
-  const [hasClockedIn, setHasClockedIn] = useState(false);
+  const [branches, setBranches] = useState<BranchOffice[]>([]);
+  const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
+  const [actionType, setActionType] = useState<"in" | "out">("in");
   const [currentTime, setCurrentTime] = useState(new Date());
-
   const [flowState, setFlowState] = useState<FlowState>("idle");
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
-  const [coords, setCoords] = useState<GeolocationCoordinates | null>(null);
+  const [coords, setCoords] = useState<LocationFix | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-
-  const mapRef = useRef<HTMLDivElement>(null);
-
+  const [locationMessage, setLocationMessage] = useState('');
+  const [pending, setPending] = useState(false);
+  const [savedRecord, setSavedRecord] = useState<AttendanceRecord | null>(null);
+  const [mapFailed, setMapFailed] = useState(false);
+  const businessDate = getLocalDateString(currentTime);
+  const operation = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+  const nativeCameraOpen = useRef(false);
+  const isSubmittingRef = useRef(false);
+  const readGeneration = useRef(0);
   const { capturePhoto, getLocation, saveAttendance } = useClockIn();
-  const { clockOut } = useClockOut();
+  const { saveClockOut, resetAttendanceDev } = useClockOut();
+  const updatePhotoUrl = setPhotoUrl;
+  useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
+
+  const handleCancelConfirm = useCallback(() => {
+    if (isSubmittingRef.current) return;
+    operation.current?.abort();
+    operation.current = null;
+    setLoading(false);
+    setPhotoUrl(null);
+    setPhotoBlob(null);
+    setCoords(null);
+    setMapFailed(false);
+    setFlowState('idle');
+  }, []);
 
   useEffect(() => {
-    if (flowState === "confirm" && coords && mapRef.current) {
-      setOptions({
-        key: import.meta.env.VITE_GOOGLE_MAPS_KEY || "",
-        v: "weekly",
-      });
+    mounted.current = true;
+    const hidden = () => {
+      if (!document.hidden || nativeCameraOpen.current) return;
+      operation.current?.abort();
+      setCoords(null);
+    };
+    document.addEventListener('visibilitychange', hidden);
+    return () => { mounted.current = false; operation.current?.abort(); document.removeEventListener('visibilitychange', hidden); };
+  }, [authUser?.id]);
 
-      Promise.all([
-        importLibrary("maps"),
-        importLibrary("marker")
-      ]).then(([{ Map }, { AdvancedMarkerElement, Marker }]) => {
+  const { usedThisMonth: usedKasbon, kasbonLimit } = useKasbon(authUser?.id);
+  const [groomingCount, setGroomingCount] = useState(0);
+  const [hotelCount, setHotelCount] = useState(0);
+  const mapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    groomingService.fetchSessions().then(sessions => {
+      if (active) setGroomingCount(sessions.filter(s => s.status === 'antrian' || s.status === 'dikerjakan').length);
+    }).catch(() => {});
+    posService.fetchBookings().then(bookings => {
+      if (active) setHotelCount(bookings.filter(b => b.status === 'aktif').length);
+    }).catch(() => {});
+    supabase.schema('hr').from('branches').select('id,name,lat,lng,radius,is_active').eq('is_active', true)
+      .then(({ data, error }) => { if (active && !error) setBranches((data || []) as BranchOffice[]); });
+    return () => { active = false; };
+  }, []);
+  const isCutiActive = !!(todayRecord && ['cuti','izin','sakit','cuti_pending','izin_pending','sakit_pending'].includes(todayRecord.status || ''));
+
+  useEffect(() => {
+    let active = true;
+    if (flowState === 'confirm' && coords && mapRef.current) {
+      setMapFailed(false);
+      setOptions({ key: import.meta.env.VITE_GOOGLE_MAPS_KEY || '', v: 'weekly' });
+      Promise.all([importLibrary('maps'), importLibrary('marker')]).then(([{ Map }, markerLib]) => {
+        if (!active || !mapRef.current) return;
         const position = { lat: coords.latitude, lng: coords.longitude };
-        const map = new Map(mapRef.current!, {
-          center: position,
-          zoom: 17,
-          mapId: "DEMO_MAP_ID",
-          disableDefaultUI: true,
-        });
-
-        if (AdvancedMarkerElement) {
-          new AdvancedMarkerElement({ map, position });
-        } else if (Marker) {
-          new Marker({ map, position });
+        try {
+          if (!markerLib.AdvancedMarkerElement) {
+            throw new Error('AdvancedMarkerElement unavailable');
+          }
+          const map = new Map(mapRef.current, { center: position, zoom: 17, mapId: 'DEMO_MAP_ID', disableDefaultUI: true });
+          new markerLib.AdvancedMarkerElement({ map, position });
+          return;
+        } catch (vectorErr) {
+          console.warn('Vector map / AdvancedMarkerElement unavailable, falling back to raster map:', vectorErr);
         }
-      }).catch(e => console.error("Error loading maps", e));
+        if (mapRef.current) {
+          mapRef.current.innerHTML = '';
+          const map = new Map(mapRef.current, { center: position, zoom: 17, disableDefaultUI: true });
+          if (markerLib.Marker) {
+            new markerLib.Marker({ map, position });
+          }
+        }
+      }).catch(err => {
+        console.error('Google Maps failed to load:', err);
+        if (active) setMapFailed(true);
+      });
     }
+    return () => { active = false; };
   }, [flowState, coords]);
 
   useEffect(() => {
+    let active = true;
+    const generation = ++readGeneration.current;
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    void (async () => {
+      if (!authUser) return;
+      try {
+        setPending(hasPendingAttendance(authUser.id));
+        const { data } = await supabase.schema('hr').from('attendance').select('*').eq('user_id', authUser.id).eq('date', businessDate).maybeSingle();
+        if (active && generation === readGeneration.current) setTodayRecord(data || null);
+      } catch { /* Storage restrictions must not crash the page. Submission reports them. */ }
+    })();
+    return () => { active = false; clearInterval(timer); };
+  }, [authUser, businessDate]);
 
-    const checkStatus = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        setUserName(
-          user.user_metadata?.name || user.email?.split("@")[0] || "Employee",
-        );
-        const today = new Date().toISOString().split("T")[0];
-        const { data } = await supabase
-          .from("attendance")
-          .select("id")
-          .eq("user_id", user.id)
-          .eq("date", today)
-          .maybeSingle();
-
-        if (data) setHasClockedIn(true);
-      }
-    };
-
-    checkStatus();
-    return () => clearInterval(timer);
-  }, []);
-
+  const begin = () => {
+    if (operation.current || isSubmittingRef.current) return null;
+    const controller = new AbortController();
+    operation.current = controller;
+    setLoading(true);
+    return controller;
+  };
+  const finish = (controller: AbortController) => {
+    if (operation.current !== controller) return;
+    operation.current = null;
+    if (mounted.current) setLoading(false);
+  };
+  const locate = async (controller: AbortController) => {
+    setLocationMessage('Mengambil lokasi presisi...');
+    const fix = await getLocation(controller.signal, value => {
+      if (mounted.current && !controller.signal.aborted) setLocationMessage(`Akurasi lokasi ±${Math.round(value.accuracy)} m. Menunggu lokasi presisi...`);
+    });
+    controller.signal.throwIfAborted();
+    setCoords(fix);
+    setLocationMessage('');
+  };
+  const reportError = (error: unknown) => {
+    if (error instanceof DOMException && error.name === 'AbortError') return;
+    const message = error instanceof Error ? error.message : 'Terjadi kesalahan. Coba lagi.';
+    if (mounted.current) { setLocationMessage(message); toast.error(message); }
+  };
+  const acceptPhoto = async (photo: Blob) => {
+    const controller = begin();
+    if (!controller) return;
+    setMapFailed(false);
+    setPhotoBlob(photo);
+    updatePhotoUrl(URL.createObjectURL(photo));
+    setFlowState('confirm');
+    try { await locate(controller); } catch (error) { reportError(error); } finally { finish(controller); }
+  };
   const handleStartClockIn = async () => {
-    if (hasClockedIn) {
-      toast.info("Already clocked in");
-      return;
-    }
-
+    if (todayRecord || pending || operation.current || isSubmittingRef.current) return;
+    setActionType('in');
+    setMapFailed(false);
+    if (!Capacitor.isNativePlatform()) { setFlowState('capturing'); return; }
+    const controller = begin();
+    if (!controller) return;
     try {
-      setLoading(true);
-      toast.info("Membuka kamera...");
+      nativeCameraOpen.current = true;
       const photo = await capturePhoto();
-
-      toast.info("Mengambil lokasi GPS...");
-      const loc = await getLocation();
-
+      nativeCameraOpen.current = false;
+      controller.signal.throwIfAborted();
       setPhotoBlob(photo);
-      setCoords(loc);
-      setPhotoUrl(URL.createObjectURL(photo));
-      setFlowState("confirm");
-    } catch (error: any) {
-      toast.error("Gagal memulai absen", { description: error.message });
-    } finally {
-      setLoading(false);
+      updatePhotoUrl(URL.createObjectURL(photo));
+      setFlowState('confirm');
+      await locate(controller);
+    } catch (error) { reportError(error); } finally { nativeCameraOpen.current = false; finish(controller); }
+  };
+  const handleStartClockOut = async () => {
+    if (!todayRecord?.clock_in_time || todayRecord.clock_out_time || isCutiActive || pending) return;
+    const controller = begin();
+    if (!controller) return;
+    setActionType('out'); setPhotoBlob(null); updatePhotoUrl(null); setMapFailed(false); setFlowState('confirm');
+    try { await locate(controller); } catch (error) { reportError(error); } finally { finish(controller); }
+  };
+  const refreshLocation = async () => {
+    const controller = begin();
+    if (!controller) return;
+    setCoords(null);
+    setMapFailed(false);
+    try { await locate(controller); } catch (error) { reportError(error); } finally { finish(controller); }
+  };
+  const handleConfirm = async () => {
+    if (!authUser || pending || (actionType === 'in' && !photoBlob)) return;
+    const controller = begin();
+    if (!controller) return;
+    isSubmittingRef.current = true;
+    try {
+      const record = actionType === 'in' ? await saveAttendance(authUser.id, photoBlob!, controller.signal) : await saveClockOut(authUser.id, controller.signal);
+      if (!mounted.current) return;
+      ++readGeneration.current;
+      setSavedRecord(record);
+      setTodayRecord(record.date === getLocalDateString() ? record : null);
+      updatePhotoUrl(null); setPhotoBlob(null); setCoords(null); setMapFailed(false); setFlowState('success');
+      toast.success('Absen berhasil disimpan.');
+    } catch (error) { reportError(error); }
+    finally {
+      isSubmittingRef.current = false;
+      if (mounted.current) { try { setPending(hasPendingAttendance(authUser.id)); } catch { setPending(true); } }
+      finish(controller);
     }
   };
-
-  const handleConfirmClockIn = async () => {
-    if (!photoBlob || !coords) return;
+  const handleConfirmClockIn = handleConfirm;
+  const handleConfirmClockOut = handleConfirm;
+  const checkPending = async () => {
+    if (!authUser) return;
+    const controller = begin();
+    if (!controller) return;
+    isSubmittingRef.current = true;
     try {
-      setLoading(true);
-      await saveAttendance(photoBlob, coords);
-      setHasClockedIn(true);
-      setFlowState("success");
-      toast.success("Absen Berhasil!");
-    } catch (error: any) {
-      toast.error("Gagal menyimpan absen", { description: error.message });
-    } finally {
-      setLoading(false);
-    }
+      const record = await recoverAttendance(authUser.id, controller.signal);
+      if (record && mounted.current) {
+        ++readGeneration.current;
+        setSavedRecord(record);
+        if (record.date === getLocalDateString()) setTodayRecord(record);
+        else {
+          const data = await loadAttendanceForDate(authUser.id, getLocalDateString(), controller.signal);
+          if (mounted.current) setTodayRecord(data || null);
+        }
+        if (!mounted.current) return;
+        setActionType(record.clock_out_time ? 'out' : 'in'); setFlowState('success'); updatePhotoUrl(null); setPhotoBlob(null);
+      }
+    } catch (error) { reportError(error); }
+    finally { isSubmittingRef.current = false; if (mounted.current) setPending(hasPendingAttendance(authUser.id)); finish(controller); }
   };
-
-  const handleClockOut = async () => {
-    try {
-      setLoading(true);
-      await clockOut();
-      setHasClockedIn(false);
-      setFlowState("idle");
-      toast.success("Reset absen berhasil");
-    } catch (error: any) {
-      toast.error("Gagal reset absen", { description: error.message });
-    } finally {
-      setLoading(false);
-    }
+  const handleDevReset = async () => {
+    if (!import.meta.env.DEV || pending) return;
+    const controller = begin();
+    if (!controller) return;
+    try { await resetAttendanceDev(); setTodayRecord(null); setFlowState('idle'); } catch (error) { reportError(error); } finally { finish(controller); }
   };
 
   const timeString = currentTime.toLocaleTimeString([], {
@@ -156,125 +268,92 @@ export default function EmployeeHome() {
     year: "numeric",
   });
 
-  const distance = coords ? getDistance(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG) : null;
-  const inArea = coords ? isWithinArea(coords.latitude, coords.longitude, OFFICE_LAT, OFFICE_LNG, GEOFENCE_RADIUS) : false;
+  const nearestEval = evaluateLocation(coords, branches, currentTime.getTime());
+  const distance = nearestEval.distance ?? null;
+  const inArea = nearestEval.accepted;
+  const targetBranch = nearestEval.branch || { name: 'Cabang', radius: 100 };
+
+  if (flowState === 'capturing') return <SelfieCamera onCapture={acceptPhoto} onCancel={handleCancelConfirm} />;
 
   if (flowState === "confirm") {
     return (
-      <div className="min-h-screen bg-[#F0FAFF] flex flex-col font-sans">
-        <div className="p-6 flex items-center gap-4 bg-white border-b border-[#C8E8F5] shadow-sm">
-          <button
-            onClick={() => setFlowState("idle")}
-            className="w-10 h-10 rounded-xl bg-[#F0FAFF] border border-[#C8E8F5] flex items-center justify-center text-[#4A7A8A]"
-          >
-            <ChevronRight className="rotate-180" size={20} />
-          </button>
-          <h1 className="font-['Syne'] text-[20px] font-bold text-[#1A3A4A]">
-            Konfirmasi Absen
-          </h1>
+      <div className="absolute inset-0 bg-background z-50 flex flex-col animate-in slide-in-from-bottom-4 duration-300">
+        <div className="p-4 flex justify-between items-center border-b border-border">
+          <h3 className="font-semibold">{actionType === "in" ? "Konfirmasi Absen Masuk" : "Konfirmasi Absen Pulang"}</h3>
+          <button disabled={loading} onClick={handleCancelConfirm} className="p-2 bg-muted rounded-full"><ChevronRight className="rotate-180" size={18} /></button>
         </div>
-
-        <div className="flex-1 p-6 overflow-y-auto">
-          <div className="rounded-[20px] overflow-hidden border border-[#C8E8F5] relative bg-[#0D2D3D] shadow-sm h-[300px]">
-            {photoUrl && (
-              <img
-                src={photoUrl}
-                alt="Selfie"
-                className="w-full h-full object-cover"
-              />
+        
+        <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-28">
+          {/* Camera Preview */}
+          <div className="relative w-full aspect-[3/4] bg-muted rounded-2xl overflow-hidden flex items-center justify-center border border-border">
+            {photoUrl ? (
+              <img src={photoUrl} alt="Selfie" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground gap-3">
+                <MapPin size={48} className="stroke-[1.2]" />
+                <div className="text-[13px] font-medium text-muted-foreground">Tanpa Foto</div>
+              </div>
             )}
-            <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-4 backdrop-blur-md">
-              <div className="flex justify-between items-center">
-                <div className="text-white/80 font-mono text-[11px] leading-relaxed">
-                  <strong className="text-white block text-[13px] mb-1">
-                    {userName}
-                  </strong>
-                  {timeString} · {dateStringFull}
-                  <br />
-                  {coords?.latitude.toFixed(5)}, {coords?.longitude.toFixed(5)}
-                </div>
-                <div className="flex items-center gap-1 bg-[#3AAD7A]/20 border border-[#3AAD7A]/40 rounded-full px-3 py-1.5 text-[11px] text-[#3AAD7A] font-medium">
-                  <CheckCircle2 size={12} /> GPS ✓
-                </div>
-              </div>
+            
+            {/* Attendance Meta Data */}
+            <div className="absolute bottom-4 left-4 right-4 bg-black/60 backdrop-blur-md rounded-xl p-3 text-white text-xs">
+              <p className="font-semibold text-sm mb-1">{userName}</p>
+              <p className="opacity-90">{dateStringFull} • {timeString}</p>
+              <p className="opacity-70 mt-1 flex items-center gap-1"><MapPin size={10} /> {coords?.latitude.toFixed(5)}, {coords?.longitude.toFixed(5)}</p>
             </div>
           </div>
 
-          <div className="mt-4 bg-white border border-[#C8E8F5] rounded-[18px] overflow-hidden shadow-sm">
-            <div className="p-4 flex items-center gap-3 border-b border-[#C8E8F5]">
-              <div className="w-10 h-10 rounded-xl bg-[#E2F0E8] border border-[#3AAD7A]/30 flex items-center justify-center shrink-0 text-[#3AAD7A]">
-                <MapPin size={20} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-[#1A3A4A] text-[14px] truncate">
-                  Lokasi Terdeteksi
-                </div>
-                <div className="font-mono text-[11px] text-[#4A7A8A] mt-0.5">
-                  {coords?.latitude.toFixed(5)}, {coords?.longitude.toFixed(5)}
-                </div>
-              </div>
-              <CheckCircle2 size={20} className="text-[#3AAD7A] shrink-0" />
+          {/* Location Info */}
+          <div className="bg-card border border-border p-4 rounded-xl flex gap-3 items-center">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${inArea ? 'bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400' : 'bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400'}`}>
+              <MapPin size={20} />
             </div>
-            {coords && (
-              <div ref={mapRef} className="h-[150px] w-full bg-[#E2F0E8] relative" />
-            )}
+            <div>
+              <p className="font-medium text-sm">
+                {coords ? (inArea ? `Dalam Area ${targetBranch.name} (${Math.round(distance!)}m)` : nearestEval.message) : 'Menghitung...'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {inArea ? `Lokasi terverifikasi di area ${targetBranch.name}.` : `Batas maksimum dari ${targetBranch.name} adalah ${targetBranch.radius}m.`}
+              </p>
+            </div>
           </div>
-
-          <div className="mt-4 flex gap-3">
-            <div className="flex-1 bg-white border border-[#C8E8F5] rounded-[14px] p-3 shadow-sm">
-              <div className="text-[10px] text-[#4A7A8A] font-mono uppercase tracking-wide mb-1">
-                Jam Masuk
-              </div>
-              <div className="font-mono text-[16px] font-medium text-[#F5A940]">
-                {timeString}
-              </div>
-            </div>
-            <div className="flex-1 bg-white border border-[#C8E8F5] rounded-[14px] p-3 shadow-sm">
-              <div className="text-[10px] text-[#4A7A8A] font-mono uppercase tracking-wide mb-1">
-                Status Lokasi
-              </div>
-              {coords ? (
-                inArea ? (
-                  <div className="font-medium text-[13px] text-[#3AAD7A]">
-                    Dalam Area ({Math.round(distance!)}m)
+          {coords && (
+            <div className="rounded-xl overflow-hidden border border-border">
+              <div ref={mapRef} className="h-[150px] w-full bg-muted relative">
+                {mapFailed && (
+                  <div className="absolute inset-0 bg-muted/95 backdrop-blur-xs flex flex-col items-center justify-center p-4 text-center gap-2 z-10">
+                    <div className="w-9 h-9 rounded-full bg-background flex items-center justify-center text-muted-foreground shadow-2xs">
+                      <MapPin size={20} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">Peta tidak dapat dimuat</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Koordinat: {coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)}
+                      </p>
+                    </div>
                   </div>
-                ) : (
-                  <div className="font-medium text-[13px] text-[#F87171]">
-                    Terlalu Jauh ({Math.round(distance!)}m)
-                  </div>
-                )
-              ) : (
-                <div className="font-medium text-[13px] text-[#4A7A8A]">
-                  Menghitung...
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="p-6 bg-white border-t border-[#C8E8F5]">
-          {coords && !inArea && (
-            <div className="mb-4 p-3 bg-[#F87171]/10 border border-[#F87171]/30 rounded-xl text-[#F87171] text-[13px] text-center font-medium">
-              ⚠️ Peringatan: Anda berada di luar radius kantor ({Math.round(distance!)}m).
+                )}
+              </div>
             </div>
           )}
-          <button
-            onClick={handleConfirmClockIn}
-            disabled={loading}
-            className="w-full py-4 rounded-[16px] bg-[#3AAD7A] text-white font-['Syne'] text-[17px] font-bold shadow-md hover:bg-[#2b8a60] transition-all flex justify-center items-center gap-2"
-          >
-            {loading ? (
-              <RefreshCw className="animate-spin" size={20} />
-            ) : (
-              "Konfirmasi Absen Masuk"
-            )}
-          </button>
-          <button
-            onClick={() => setFlowState("idle")}
-            className="w-full mt-3 py-3 rounded-[14px] border border-[#C8E8F5] text-[#4A7A8A] font-medium text-[14px] hover:bg-[#F0FAFF] transition-all"
-          >
-            Foto Ulang
-          </button>
+
+          <p role="status" className="text-sm">{locationMessage || nearestEval.message}{coords ? ` Akurasi ±${Math.round(coords.accuracy)} m.` : ''}</p>
+          <button disabled={loading} onClick={refreshLocation} className="min-h-11 w-full rounded-xl border mb-3 font-medium text-sm hover:bg-muted active:scale-[0.99] transition-all">Coba lokasi lagi</button>
+          {pending && <button disabled={loading} onClick={checkPending} className="min-h-11 w-full rounded-xl border mb-3 font-medium text-sm hover:bg-muted active:scale-[0.99] transition-all">Periksa pengiriman</button>}
+          {/* Action Buttons */}
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <button disabled={loading} onClick={handleCancelConfirm} className="py-3.5 rounded-xl font-medium text-sm bg-secondary text-secondary-foreground">
+              {actionType === "in" ? "Foto Ulang" : "Batal"}
+            </button>
+            <button 
+              onClick={actionType === "in" ? handleConfirmClockIn : handleConfirmClockOut}
+              disabled={loading || !inArea || pending}
+              className={`py-3.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2 ${loading || !inArea ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'bg-primary text-primary-foreground'}`}
+            >
+              {loading ? <RefreshCw className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
+              Konfirmasi
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -282,54 +361,50 @@ export default function EmployeeHome() {
 
   if (flowState === "success") {
     return (
-      <div className="min-h-screen bg-[#F0FAFF] flex flex-col items-center justify-center p-6 text-center font-sans">
+      <div className="absolute inset-0 bg-background z-50 flex flex-col items-center justify-center p-6 text-center animate-in zoom-in-95 duration-300">
         <div className="relative mb-8">
-          <div className="absolute inset-[-20px] rounded-full border border-[#3AAD7A]/20 opacity-40"></div>
-          <div className="absolute inset-[-10px] rounded-full border border-[#3AAD7A]/40 opacity-70"></div>
-          <div className="w-[100px] h-[100px] rounded-full bg-[#E2F0E8] border-2 border-[#3AAD7A]/50 flex items-center justify-center relative z-10">
-            <CheckCircle2 size={48} className="text-[#3AAD7A]" />
+          <div className="absolute inset-[-20px] rounded-full border border-green-500/20 opacity-40"></div>
+          <div className="absolute inset-[-10px] rounded-full border border-green-500/40 opacity-70"></div>
+          <div className="w-[100px] h-[100px] rounded-full bg-green-100 border-2 border-green-500/50 flex items-center justify-center relative z-10 dark:bg-green-500/20">
+            <CheckCircle2 size={48} className="text-green-600 dark:text-green-400" />
           </div>
         </div>
 
-        <h2 className="font-['Syne'] text-[28px] font-bold text-[#1A3A4A] mb-2">
-          Absen berhasil!
+        <h2 className="text-3xl font-display font-bold mb-2">
+          {actionType === "in" ? "Absen masuk berhasil!" : "Absen pulang berhasil!"}
         </h2>
-        <p className="text-[14px] text-[#4A7A8A] leading-relaxed mb-8">
+        <p className="text-sm text-muted-foreground leading-relaxed mb-8">
           Kehadiran kamu sudah tercatat.
           <br />
-          Selamat bekerja, {userName} 👋
+          {actionType === "in" ? `Selamat bekerja, ${userName} 👋` : `Selamat istirahat, ${userName} 👋`}
         </p>
 
-        <div className="w-full bg-white border border-[#C8E8F5] rounded-[20px] p-5 mb-8 shadow-sm text-left">
-          <div className="flex justify-between items-center py-2 border-b border-[#F0FAFF]">
-            <span className="text-[13px] text-[#4A7A8A]">Nama</span>
-            <span className="font-mono text-[13.5px] font-medium text-[#1A3A4A]">
+        <div className="w-full bg-card border border-border rounded-[20px] p-5 mb-8 shadow-sm text-left">
+          <div className="flex justify-between items-center py-2 border-b border-muted">
+            <span className="text-xs text-muted-foreground">Nama</span>
+            <span className="font-medium text-sm">
               {userName}
             </span>
           </div>
-          <div className="flex justify-between items-center py-2 border-b border-[#F0FAFF]">
-            <span className="text-[13px] text-[#4A7A8A]">Jam masuk</span>
-            <span className="font-mono text-[13.5px] font-medium text-[#3AAD7A]">
-              {timeString}
+          <div className="flex justify-between items-center py-2 border-b border-muted">
+            <span className="text-xs text-muted-foreground">
+              {actionType === "in" ? "Jam masuk" : "Jam pulang"}
             </span>
-          </div>
-          <div className="flex justify-between items-center py-2 border-b border-[#F0FAFF]">
-            <span className="text-[13px] text-[#4A7A8A]">Lokasi</span>
-            <span className={`font-mono text-[13.5px] font-medium ${inArea ? "text-[#3AAD7A]" : "text-[#F87171]"}`}>
-              {inArea ? "Dalam area ✓" : "Luar area ⚠️"}
+            <span className={`font-medium text-sm ${actionType === "in" ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-400"}`}>
+              {savedRecord && new Date((actionType === 'in' ? savedRecord.clock_in_time : savedRecord.clock_out_time) || savedRecord.date).toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}
             </span>
           </div>
           <div className="flex justify-between items-center py-2">
-            <span className="text-[13px] text-[#4A7A8A]">Koordinat</span>
-            <span className="font-mono text-[11px] text-[#1A3A4A]">
-              {coords?.latitude.toFixed(5)}, {coords?.longitude.toFixed(5)}
+            <span className="text-xs text-muted-foreground">Koordinat</span>
+            <span className="text-xs">
+              {actionType === 'in' ? savedRecord?.clock_in_lat : savedRecord?.clock_out_lat}, {actionType === 'in' ? savedRecord?.clock_in_lng : savedRecord?.clock_out_lng}
             </span>
           </div>
         </div>
 
         <button
           onClick={() => setFlowState("idle")}
-          className="w-full py-4 rounded-[16px] border border-[#C8E8F5] bg-white text-[#1A3A4A] font-['Syne'] text-[17px] font-bold hover:bg-[#F0FAFF] transition-all shadow-sm"
+          className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-medium"
         >
           Kembali ke Home
         </button>
@@ -338,135 +413,182 @@ export default function EmployeeHome() {
   }
 
   return (
-    <div className="bg-[#F0FAFF] flex flex-col font-sans relative min-h-screen">
-      {/* Header (existing styling) */}
-      <header className="relative z-10 p-6 flex justify-between items-center bg-white border-b border-[#C8E8F5] shadow-sm">
+    <div className="flex flex-col h-full bg-background overflow-y-auto pb-24">
+      {pending && <button disabled={loading} onClick={checkPending} className="min-h-11 w-full rounded-xl border p-3">Periksa pengiriman absen sebelumnya</button>}
+
+      {/* Header */}
+      <div className="p-6 pb-6 flex justify-between items-start bg-[#0c1d2a] text-white rounded-b-3xl shadow-sm">
         <div>
-          <p className="text-[11px] font-medium text-[#8ABAC8] tracking-[1.5px] uppercase font-mono mb-1">
-            Welcome back
-          </p>
-          <h1 className="text-[20px] font-bold text-[#1A3A4A] font-['Syne'] capitalize">
-            {userName}
-          </h1>
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 text-emerald-300 text-[11px] font-semibold mb-2 border border-white/10">
+            <span>🐾</span> Dr.Meow Employee
+          </div>
+          <h2 className="text-xl font-display font-bold capitalize tracking-tight">{userName}</h2>
+          <p className="text-white/70 text-xs mt-0.5">Semoga harimu menyenangkan!</p>
         </div>
-        <button className="w-[42px] h-[42px] rounded-full bg-white hover:bg-[#F0FAFF] text-[#4A7A8A] hover:text-[#F5A940] transition-all border border-[#C8E8F5] flex items-center justify-center relative shadow-sm">
+        <button className="relative p-2.5 bg-white/10 hover:bg-white/15 active:scale-95 transition-all rounded-2xl border border-white/10 text-white shadow-xs">
           <Bell size={18} />
-          <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-[#F87171] rounded-full border border-white"></span>
+          <span className="absolute top-2 right-2 w-2 h-2 bg-amber-400 rounded-full"></span>
         </button>
-      </header>
+      </div>
 
-      {/* Main Content */}
-      <div className="p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="bg-white border border-[#C8E8F5] rounded-full px-3.5 py-1.5 text-[12.5px] text-[#4A7A8A] font-mono shadow-sm">
-            {dateStringFull}
-          </div>
-          {!hasClockedIn && (
-            <div className="flex items-center gap-1.5 bg-[#E2F0E8] border border-[#3AAD7A]/30 rounded-full px-3 py-1.5 text-[11.5px] text-[#3AAD7A] font-medium shadow-sm">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#3AAD7A] animate-ping"></div>
-              Absensi terbuka
+      <div className="p-5 space-y-4">
+        {/* Status Card */}
+        <div className="bg-card rounded-3xl shadow-xs border border-border/80 p-5">
+          <div className="flex justify-between items-center mb-5">
+            <div className="bg-muted px-3 py-1 rounded-full text-xs font-semibold text-foreground">
+              📅 {dateStringFull}
             </div>
-          )}
-        </div>
-
-        <div className="bg-white border border-[#C8E8F5] rounded-[24px] p-6 shadow-sm relative overflow-hidden mb-5">
-          <div className="absolute -top-10 -right-10 w-[140px] h-[140px] rounded-full bg-gradient-to-br from-[#4DC8F5]/10 to-transparent pointer-events-none"></div>
-
-          <div className="font-['Syne'] text-[48px] sm:text-[56px] font-bold text-[#1A3A4A] tracking-tight leading-none mb-1">
-            {timeString}
-          </div>
-          <div className="text-[13px] text-[#4A7A8A] mb-6">
-            Jam kerja dimulai 08:00
-          </div>
-
-          <div className="flex gap-2.5 mb-5">
-            <div className="flex-1 bg-[#F0FAFF] border border-[#C8E8F5] rounded-[14px] p-3">
-              <div className="text-[10px] text-[#8ABAC8] uppercase tracking-wide font-mono mb-1">
-                Status hari ini
+            {!todayRecord ? (
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 rounded-full dark:text-emerald-300">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Absensi Terbuka
               </div>
-              <div
-                className={`font-mono text-[14px] font-medium ${hasClockedIn ? "text-[#3AAD7A]" : "text-[#F5A940]"}`}
-              >
-                {hasClockedIn ? "Sudah Absen" : "Belum Absen"}
+            ) : (
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-500/15 border border-blue-500/30 px-2.5 py-1 rounded-full dark:text-blue-300">
+                {todayRecord.clock_out_time ? "✨ Selesai Kerja" : "✓ Sudah Masuk"}
               </div>
+            )}
+          </div>
+          
+          <div className="text-center mb-5">
+            <h1 className="text-5xl font-display font-black tracking-tight mb-1 text-foreground financial-num">{timeString}</h1>
+            <p className="text-xs font-medium text-muted-foreground flex items-center justify-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Jam kerja dimulai 08:00
+            </p>
+          </div>
+
+          <div className="flex justify-between items-center px-4 py-3 bg-muted/50 border border-border/60 rounded-2xl mb-5">
+            <div>
+              <p className="text-[11px] font-medium text-muted-foreground mb-0.5">Status Hari Ini</p>
+              <p className="font-bold text-sm text-foreground">
+                {isCutiActive ? "🌴 Cuti / Izin" : !todayRecord ? "⏳ Belum Absen" : todayRecord.clock_out_time ? "✨ Selesai" : "✓ Sudah Masuk"}
+              </p>
             </div>
-            <div className="flex-1 bg-[#F0FAFF] border border-[#C8E8F5] rounded-[14px] p-3">
-              <div className="text-[10px] text-[#8ABAC8] uppercase tracking-wide font-mono mb-1">
-                Kehadiran
-              </div>
-              <div className="font-mono text-[14px] font-medium text-[#4DC8F5]">
-                26 Hari
-              </div>
+            <div className="text-right">
+              <p className="text-[11px] font-medium text-muted-foreground mb-0.5">Kehadiran Bulan Ini</p>
+              <p className="font-bold text-sm text-foreground">26 Hari Hadir</p>
             </div>
           </div>
 
-          <button
-            onClick={hasClockedIn ? undefined : handleStartClockIn}
-            disabled={loading || hasClockedIn}
-            className={`w-full py-4 rounded-[16px] font-['Syne'] text-[17px] font-bold transition-all flex items-center justify-center gap-3 relative overflow-hidden ${
-              hasClockedIn
-                ? "bg-[#E2F0E8] text-[#3AAD7A] cursor-not-allowed border border-[#3AAD7A]/20"
-                : "bg-[#F5A940] hover:bg-[#e09833] text-white shadow-[#F5A940]/20 shadow-lg border-none"
+          <button 
+            onClick={
+              isCutiActive ? undefined :
+              !todayRecord ? handleStartClockIn :
+              todayRecord.clock_out_time ? undefined :
+              handleStartClockOut
+            }
+            disabled={loading || isCutiActive || !!(todayRecord && todayRecord.clock_out_time)}
+            className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-xs ${
+              isCutiActive || (todayRecord && todayRecord.clock_out_time) 
+                ? 'bg-muted text-muted-foreground cursor-not-allowed shadow-none' 
+                : todayRecord 
+                  ? 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white active:scale-[0.98]' 
+                  : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white active:scale-[0.98]'
             }`}
           >
-            {loading ? (
-              <RefreshCw size={20} className="animate-spin text-white" />
-            ) : hasClockedIn ? (
-              <>
-                <CheckCircle2 size={20} />
-                Sudah Absen
-              </>
-            ) : (
-              <>
-                <div className="absolute inset-0 bg-[#F5A940] animate-pulse opacity-20" />
-                <Camera size={20} className="relative z-10" />
-                <span className="relative z-10">Absen Masuk</span>
-              </>
-            )}
+            {loading ? <RefreshCw size={18} className="animate-spin" /> : <Camera size={18} />}
+            {isCutiActive ? "Sedang Cuti / Izin" : todayRecord && todayRecord.clock_out_time ? "Absensi Hari Ini Selesai" : todayRecord ? "Absen Pulang Sekarang" : "Absen Masuk Sekarang"}
           </button>
         </div>
 
-        {/* Mini Stats */}
-        <div className="grid grid-cols-2 gap-3 mb-5">
-          <div className="bg-white border border-[#C8E8F5] rounded-[18px] p-4 shadow-sm">
-            <div className="text-[10.5px] text-[#8ABAC8] uppercase tracking-wide font-mono mb-2">
-              Kasbon
+        {/* Mini Stats (Clean Flat Solid Surface Cards) */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* Kasbon Card */}
+          <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-xs group">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold">
+                  <Wallet size={15} />
+                </div>
+                <span className="text-xs font-bold text-foreground">Kasbon</span>
+              </div>
+              <span className="text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-full">Bulan Ini</span>
             </div>
-            <div className="font-['Syne'] text-[20px] font-bold text-[#1A3A4A] leading-none mb-1">
-              Rp 0
+            <p className="text-lg font-bold text-foreground mb-2 financial-num">Rp {formatCurrencyShort(usedKasbon)}</p>
+            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden mb-1.5">
+              <div className="h-full bg-amber-500 rounded-full transition-all duration-500" style={{ width: `${kasbonLimit > 0 ? Math.min((usedKasbon / kasbonLimit) * 100, 100) : 0}%` }}></div>
             </div>
-            <div className="text-[11px] text-[#4A7A8A]">dari limit Rp 1jt</div>
-            <div className="h-[4px] bg-[#F0FAFF] rounded-full mt-3 overflow-hidden">
-              <div
-                className="h-full bg-[#F5A940]"
-                style={{ width: "0%" }}
-              ></div>
-            </div>
+            <p className="text-[11px] text-muted-foreground font-medium">Limit: <strong className="text-foreground financial-num">Rp {formatCurrencyShort(kasbonLimit)}</strong></p>
           </div>
-          <div className="bg-white border border-[#C8E8F5] rounded-[18px] p-4 shadow-sm">
-            <div className="text-[10.5px] text-[#8ABAC8] uppercase tracking-wide font-mono mb-2">
-              Estimasi Gaji
+          
+          {/* Estimasi Gaji Card */}
+          <div className="bg-card border border-border/80 rounded-2xl p-4 shadow-xs group">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold">
+                  <FileText size={15} />
+                </div>
+                <span className="text-xs font-bold text-foreground">Gaji Bersih</span>
+              </div>
+              <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-full">Estimasi</span>
             </div>
-            <div className="font-['Syne'] text-[20px] font-bold text-[#1A3A4A] leading-none mb-1">
-              Rp 4.2jt
+            <p className="text-lg font-bold text-foreground mb-2 financial-num">Rp {formatCurrencyShort(Math.max(0, salary - usedKasbon))}</p>
+            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden mb-1.5">
+              <div className="h-full bg-emerald-600 rounded-full transition-all duration-500" style={{ width: `${salary > 0 ? Math.max(0, Math.min(((salary - usedKasbon) / salary) * 100, 100)) : 100}%` }}></div>
             </div>
-            <div className="text-[11px] text-[#4A7A8A]">bersih bulan ini</div>
-            <div className="h-[4px] bg-[#F0FAFF] rounded-full mt-3 overflow-hidden">
-              <div
-                className="h-full bg-[#3AAD7A]"
-                style={{ width: "100%" }}
-              ></div>
-            </div>
+            <p className="text-[11px] text-muted-foreground font-medium">Take home pay</p>
           </div>
         </div>
 
-        {/* Dev Action */}
-        {hasClockedIn && (
+        {/* Operasional Klinik & Salon Cards */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase font-mono text-muted-foreground tracking-wider">
+              Aktivitas Klinik Hari Ini
+            </h3>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Link
+              to="/employee/grooming"
+              className="p-3.5 bg-card border border-border/80 rounded-2xl shadow-xs hover:border-[#F5A940]/50 transition-all block group"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-8 h-8 rounded-xl bg-[#F5A940]/15 text-[#F5A940] flex items-center justify-center">
+                  <Scissors size={16} />
+                </div>
+                <span className="text-[10px] font-semibold text-[#F5A940] bg-[#F5A940]/10 px-2 py-0.5 rounded-full">
+                  Grooming
+                </span>
+              </div>
+              <div className="text-base font-bold text-foreground financial-num">
+                {groomingCount} Kucing
+              </div>
+              <p className="text-[11px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5 group-hover:text-[#F5A940] transition-colors">
+                <span>Buka antrian</span>
+                <ChevronRight size={12} />
+              </p>
+            </Link>
+
+            <Link
+              to="/employee/hotel"
+              className="p-3.5 bg-card border border-border/80 rounded-2xl shadow-xs hover:border-[#3AAD7A]/50 transition-all block group"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="w-8 h-8 rounded-xl bg-[#3AAD7A]/15 text-[#3AAD7A] flex items-center justify-center">
+                  <Building2 size={16} />
+                </div>
+                <span className="text-[10px] font-semibold text-[#3AAD7A] bg-[#3AAD7A]/10 px-2 py-0.5 rounded-full">
+                  Hotel
+                </span>
+              </div>
+              <div className="text-base font-bold text-foreground financial-num">
+                {hotelCount} Menginap
+              </div>
+              <p className="text-[11px] text-muted-foreground font-medium flex items-center gap-1 mt-0.5 group-hover:text-[#3AAD7A] transition-colors">
+                <span>Laporan & Kamar</span>
+                <ChevronRight size={12} />
+              </p>
+            </Link>
+          </div>
+        </div>
+
+        {/* Dev Action (Development Only) */}
+        {import.meta.env.DEV && todayRecord && (
           <button
-            onClick={handleClockOut}
-            className="w-full py-3 mb-5 rounded-xl border border-[#F87171]/30 text-[#F87171] text-sm bg-white hover:bg-[#F87171]/5 flex items-center justify-center gap-2"
+            onClick={handleDevReset}
+            className="w-full py-2.5 rounded-2xl text-xs flex items-center justify-center gap-2 text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/15 border border-rose-500/20 font-semibold transition-colors"
           >
-            <RefreshCw size={16} /> Reset Absen (Dev)
+            <RefreshCw size={13} /> Reset Absen (Dev Mode)
           </button>
         )}
       </div>

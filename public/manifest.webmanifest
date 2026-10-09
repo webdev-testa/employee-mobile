@@ -1,0 +1,14 @@
+{
+  "id": "/",
+  "name": "Dr.Meow Employee",
+  "short_name": "Dr.Meow",
+  "lang": "id",
+  "start_url": "/employee/home",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0c1d2a",
+  "icons": [
+    { "src": "/app-icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
+  ]
+}

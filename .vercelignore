@@ -1,0 +1,35 @@
+# Native mobile platforms (Capacitor)
+android/
+ios/
+assets/
+capacitor.config.ts
+
+# Supabase backend & local test files
+supabase/
+
+# Automated tests & test configs
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+vitest.config.*
+
+# Build and debug logs
+*.log
+.android-build.log
+.baseline-lint.log
+.lint-results.log
+.test-results.log
+
+# Project documentation & guidelines
+docs/
+AGENTS.md
+DESIGN.md
+PRODUCT.md
+README.md
+
+# Editor and environment
+.vscode/
+.env
+.env.local
+.env.*.local

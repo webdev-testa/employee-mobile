@@ -6,9 +6,19 @@ import {
 } from "react-router-dom";
 import { useAuth, AuthProvider } from "@/hooks/useAuth";
 import LoginPage from "@/pages/login/loginPage";
+import ChangePasswordPage from "@/pages/login/ChangePassword";
 import EmployeeHome from "@/pages/Home";
+import EmployeeAbsensi from "@/pages/Absensi";
 import EmployeeKasbon from "@/pages/Kasbon";
 import EmployeeProfil from "@/pages/Profil";
+import EmployeeSlipGaji from "@/pages/SlipGaji";
+import GroomingHome from "@/pages/grooming/GroomingHome";
+import GroomingCheckIn from "@/pages/grooming/GroomingCheckIn";
+import GroomingWorkstation from "@/pages/grooming/GroomingWorkstation";
+import HotelHome from "@/pages/hotel/HotelHome";
+import HotelCheckIn from "@/pages/hotel/HotelCheckIn";
+import HotelDailyReport from "@/pages/hotel/HotelDailyReport";
+import HotelCheckOut from "@/pages/hotel/HotelCheckOut";
 import { EmployeeLayout } from "@/components/layout/EmployeeLayout";
 
 // Auth
@@ -37,6 +47,10 @@ function AuthGuard() {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  if (user.must_change_password && location.pathname !== "/change-password") {
+    return <Navigate to="/change-password" replace />;
+  }
+
   return <Outlet />;
 }
 
@@ -45,7 +59,7 @@ function RoleGuard({ allowedRoles }: { allowedRoles: string[] }) {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center font-mono text-sm text-[#8ABAC8]">
+      <div className="flex h-screen items-center justify-center font-mono text-sm text-status-info">
         Checking permissions...
       </div>
     );
@@ -57,16 +71,28 @@ function RoleGuard({ allowedRoles }: { allowedRoles: string[] }) {
 
   if (!allowedRoles.includes(user.role)) {
     if (user.role === "admin" || user.role === "superadmin") {
-      return <Navigate to="/admin/dashboard" replace />;
+      return (
+        <div className="flex flex-col h-screen items-center justify-center font-sans text-sm bg-status-info-bg text-foreground p-6 text-center">
+          <div className="text-status-warning mb-4 text-[20px] font-bold font-display">
+            Akses Terbatas
+          </div>
+          <div className="text-status-info mb-6 max-w-xs leading-relaxed">
+            Akun Admin hanya dapat digunakan melalui portal web admin. Silakan gunakan akun Karyawan untuk masuk ke aplikasi ini.
+          </div>
+          <button onClick={() => logout()} className="px-6 py-3 bg-status-warning hover:opacity-90 text-white rounded-[14px] font-sans font-bold font-display transition-all cursor-pointer shadow-md">
+            Log out
+          </button>
+        </div>
+      );
     } else if (user.role === "employee") {
       return <Navigate to="/employee/home" replace />;
     } else {
       return (
         <div className="flex flex-col h-screen items-center justify-center font-mono text-sm">
-          <div className="text-[#F5A940] mb-2">
+          <div className="text-status-warning mb-2">
             Error: Invalid or missing user role ({user.role || "none"}).
           </div>
-          <button onClick={() => logout()} className="text-blue-500 underline">
+          <button onClick={() => logout()} className="text-primary underline">
             Log out
           </button>
         </div>
@@ -94,6 +120,10 @@ export const router = createBrowserRouter([
       {
         element: <AuthGuard />,
         children: [
+          {
+            path: "/change-password",
+            element: <ChangePasswordPage />,
+          },
           {
             element: <RoleGuard allowedRoles={["admin", "superadmin"]} />,
             children: [
@@ -130,12 +160,48 @@ export const router = createBrowserRouter([
                     element: <EmployeeHome />,
                   },
                   {
+                    path: "/employee/absensi",
+                    element: <EmployeeAbsensi />,
+                  },
+                  {
+                    path: "/employee/grooming",
+                    element: <GroomingHome />,
+                  },
+                  {
+                    path: "/employee/grooming/checkin",
+                    element: <GroomingCheckIn />,
+                  },
+                  {
+                    path: "/employee/grooming/work",
+                    element: <GroomingWorkstation />,
+                  },
+                  {
+                    path: "/employee/hotel",
+                    element: <HotelHome />,
+                  },
+                  {
+                    path: "/employee/hotel/checkin",
+                    element: <HotelCheckIn />,
+                  },
+                  {
+                    path: "/employee/hotel/report",
+                    element: <HotelDailyReport />,
+                  },
+                  {
+                    path: "/employee/hotel/checkout",
+                    element: <HotelCheckOut />,
+                  },
+                  {
                     path: "/employee/kasbon",
                     element: <EmployeeKasbon />,
                   },
                   {
                     path: "/employee/profil",
                     element: <EmployeeProfil />,
+                  },
+                  {
+                    path: "/employee/slip-gaji",
+                    element: <EmployeeSlipGaji />,
                   },
                   {
                     path: "/employee",
