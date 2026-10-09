@@ -29,3 +29,26 @@ it('keeps capture disabled when camera access is denied', async () => {
   expect(container.querySelector('[role=alert]')?.textContent).toContain('Permission denied')
   expect(Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Ambil foto')?.disabled).toBe(true)
 })
+it('captures a ready camera frame and releases the camera after leaving the screen', async () => {
+  const stop = vi.fn()
+  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
+    getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] }),
+  } })
+  const photo = new Blob(['selfie'], { type: 'image/jpeg' })
+  const drawImage = vi.fn()
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D)
+  vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(callback => callback(photo))
+  const onCapture = vi.fn()
+  await act(() => root.render(<SelfieCamera onCapture={onCapture} onCancel={vi.fn()} />))
+  const video = container.querySelector('video')!
+  const capture = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Ambil foto')!
+  expect(capture.disabled).toBe(true)
+  Object.defineProperties(video, { videoWidth: { value: 720 }, videoHeight: { value: 1280 } })
+  await act(() => video.dispatchEvent(new Event('loadeddata')))
+  expect(capture.disabled).toBe(false)
+  await act(() => capture.click())
+  expect(drawImage).toHaveBeenCalledWith(video, 0, 0, 720, 1280)
+  expect(onCapture).toHaveBeenCalledWith(photo)
+  await act(() => root.render(null))
+  expect(stop).toHaveBeenCalledOnce()
+})

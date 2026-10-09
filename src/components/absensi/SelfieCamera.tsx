@@ -48,11 +48,13 @@ export function SelfieCamera({ onCapture, onCancel }: { onCapture: (photo: Blob)
     }, 'image/jpeg', 0.8)
   }
 
-  return <div className="absolute inset-0 z-50 bg-background flex flex-col p-4 gap-4" role="dialog" aria-label="Ambil selfie">
-    <h2 className="font-semibold text-lg">Ambil selfie untuk absen</h2>
-    <video ref={video} muted playsInline autoPlay onLoadedData={() => setReady(true)} className="w-full flex-1 min-h-0 rounded-xl object-cover bg-black" />
+  return <div className="absolute inset-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] z-50 bg-background flex flex-col overflow-y-auto p-4 gap-4" role="dialog" aria-label="Ambil selfie">
+    <h2 className="shrink-0 font-semibold text-lg">Ambil selfie untuk absen</h2>
+    <div className="relative flex-1 min-h-0">
+      <video ref={video} muted playsInline autoPlay onLoadedData={() => setReady(true)} className="absolute inset-0 w-full h-full rounded-xl object-cover bg-black" />
+    </div>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    <div className="grid grid-cols-2 gap-3">
+    <div className="grid shrink-0 grid-cols-2 gap-3">
       <button onClick={onCancel} className="min-h-11 rounded-xl bg-secondary">Batal</button>
       <button disabled={!ready || !!error} onClick={capture} className="min-h-11 rounded-xl bg-primary text-primary-foreground disabled:opacity-50">Ambil foto</button>
     </div>
