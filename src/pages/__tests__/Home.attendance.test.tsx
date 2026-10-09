@@ -38,6 +38,28 @@ beforeEach(() => {
 })
 afterEach(async () => { await act(() => root.unmount()); container.remove(); vi.useRealTimers(); vi.restoreAllMocks() })
 const render = () => act(() => root.render(<MemoryRouter><Home /></MemoryRouter>))
+it('warms browser location after login and aborts warm-up when the page is hidden', async () => {
+  m.native.mockReturnValue(false)
+  m.location.mockImplementation(() => new Promise(() => {}))
+  await render()
+  expect(m.location).toHaveBeenCalledOnce()
+  const signal = m.location.mock.calls[0][0] as AbortSignal
+  expect(signal.aborted).toBe(false)
+  expect(button('Absen Masuk Sekarang').disabled).toBe(false)
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+  try {
+    await act(() => document.dispatchEvent(new Event('visibilitychange')))
+    expect(signal.aborted).toBe(true)
+  } finally { Object.defineProperty(document, 'hidden', { configurable: true, value: false }) }
+})
+it('shows a completed accuracy failure instead of a perpetual calculating state', async () => {
+  m.location.mockRejectedValue(new Error('Akurasi lokasi ±97 m. Pindah ke area terbuka lalu coba lagi.'))
+  await render(); await act(() => button('Absen Masuk Sekarang').click())
+  expect(container.textContent).toContain('Lokasi belum terverifikasi')
+  expect(container.textContent).toContain('Akurasi maksimal ±30 m')
+  expect(button('Konfirmasi').disabled).toBe(true)
+  expect(m.save).not.toHaveBeenCalled()
+})
 it('blocks double start and double submit, and releases preview after success', async () => {
   await render()
   await act(() => { button('Absen Masuk Sekarang').click(); button('Absen Masuk Sekarang').click() })

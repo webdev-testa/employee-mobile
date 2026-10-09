@@ -11,6 +11,7 @@ export const LOCATION_POLICY = {
   maxAge: 15_000,
   futureTolerance: 5_000,
   timeout: 30_000,
+  permissionTimeout: 60_000,
 } as const
 
 export function locationProblem(fix: LocationFix, now = Date.now()): string | null {

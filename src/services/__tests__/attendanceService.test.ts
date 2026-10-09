@@ -29,7 +29,15 @@ describe('attendance requests', () => {
   it('acquires fresh coordinates after upload and returns the committed record', async () => {
     expect(await submitAttendance(user, 'in', photo(), new AbortController().signal)).toEqual(record)
     expect(mocks.upload.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(acquireLocation).mock.invocationCallOrder[0])
+    expect(mocks.rpc).toHaveBeenCalledWith('attendance_submit', expect.objectContaining({
+      p_lat: -8, p_lng: 112, p_accuracy: 10, p_sampled_at: expect.any(String),
+    }))
     expect(hasPendingAttendance(user)).toBe(false)
+  })
+  it('does not send attendance when the location accuracy is 97 m', async () => {
+    vi.mocked(acquireLocation).mockResolvedValue({ latitude: -8, longitude: 112, accuracy: 97, timestamp: Date.now(), provider: 'web' })
+    await expect(submitAttendance(user, 'out', null, new AbortController().signal)).rejects.toThrow('±97 m')
+    expect(mocks.rpc).not.toHaveBeenCalled()
   })
   it('replays identical data after a lost response without reuploading or deleting the photo', async () => {
     mocks.rpc.mockResolvedValueOnce({ error: { code: '', message: 'network failed' } })
