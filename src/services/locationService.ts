@@ -7,6 +7,8 @@ export function acquireLocation(signal?: AbortSignal, onProgress?: (fix: Locatio
     const native = Capacitor.isNativePlatform()
     let stopped = false
     let watchId: string | number | undefined
+    let permission: PermissionStatus | undefined
+    let acquiring = false
     let newestTimestamp = -Infinity
     let lastProblem = 'Lokasi belum tersedia. Aktifkan GPS lalu coba lagi.'
     const clear = () => {
@@ -20,16 +22,28 @@ export function acquireLocation(signal?: AbortSignal, onProgress?: (fix: Locatio
       stopped = true
       clearTimeout(timer)
       signal?.removeEventListener('abort', abort)
+      permission?.removeEventListener('change', permissionChanged)
       clear()
       if (fix) resolve(fix)
       else reject(error)
     }
     const abort = () => finish(undefined, new DOMException('Pengambilan lokasi dibatalkan', 'AbortError'))
-    const timer = setTimeout(() => finish(undefined, new Error(lastProblem)), LOCATION_POLICY.timeout)
+    let timer = setTimeout(() => finish(undefined, new Error('Lokasi belum tersedia. Periksa izin lokasi dan GPS lalu coba lagi.')), LOCATION_POLICY.permissionTimeout)
+    const startAcquisition = () => {
+      if (stopped || acquiring) return
+      acquiring = true
+      clearTimeout(timer)
+      timer = setTimeout(() => finish(undefined, new Error(lastProblem)), LOCATION_POLICY.timeout)
+    }
+    const permissionChanged = () => {
+      if (permission?.state === 'granted') startAcquisition()
+      else if (permission?.state === 'denied') fail({ code: 1 })
+    }
     signal?.addEventListener('abort', abort, { once: true })
     if (signal?.aborted) { abort(); return }
 
     const accept = (position: { coords: { latitude: number; longitude: number; accuracy: number }; timestamp: number }) => {
+      startAcquisition()
       if (stopped || position.timestamp <= newestTimestamp) return
       const fix: LocationFix = { latitude: position.coords.latitude, longitude: position.coords.longitude,
         accuracy: position.coords.accuracy, timestamp: position.timestamp, provider: native ? 'native' : 'web' }
@@ -56,6 +70,7 @@ export function acquireLocation(signal?: AbortSignal, onProgress?: (fix: Locatio
           if (permissions.location !== 'granted') permissions = await Geolocation.requestPermissions({ permissions: ['location'] })
           if (stopped) return
           if (permissions.location !== 'granted') { fail({ code: 1 }); return }
+          startAcquisition()
           watchId = await Geolocation.watchPosition({ ...options, minimumUpdateInterval: 1000, interval: 1000 }, (position, error) => {
             if (error) fail(error)
             else if (position) accept(position)
@@ -63,6 +78,14 @@ export function acquireLocation(signal?: AbortSignal, onProgress?: (fix: Locatio
         } else {
           if (!window.isSecureContext) { finish(undefined, new Error('Lokasi memerlukan koneksi HTTPS.')); return }
           if (!navigator.geolocation) { finish(undefined, new Error('Perangkat tidak mendukung lokasi.')); return }
+          // The browser's acquisition timeout excludes the permission prompt; ours must too.
+          if (navigator.permissions) {
+            try { permission = await navigator.permissions.query({ name: 'geolocation' }) } catch { /* Older browsers start the deadline with the first sample. */ }
+          }
+          if (stopped) return
+          permission?.addEventListener('change', permissionChanged)
+          if (permission?.state === 'denied') { fail({ code: 1 }); return }
+          if (permission?.state === 'granted') startAcquisition()
           watchId = navigator.geolocation.watchPosition(accept, fail, options)
         }
         // A callback/abort can finish before an asynchronous native ID arrives.

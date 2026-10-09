@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useKasbon } from "@/hooks/useKasbon";
 import { toast } from "sonner";
 import { evaluateLocation, type BranchOffice } from "@/lib/geofence";
-import type { LocationFix } from '@/types/location';
+import { LOCATION_POLICY, type LocationFix } from '@/types/location';
 import { hasPendingAttendance, recoverAttendance, loadAttendanceForDate, type AttendanceRecord } from '@/services/attendanceService';
 import { SelfieCamera } from '@/components/absensi/SelfieCamera';
 import { MapPin, CheckCircle2, ChevronRight, Camera, RefreshCw, Bell, Wallet, FileText, Scissors, Building2 } from "lucide-react";
@@ -41,12 +41,25 @@ export default function EmployeeHome() {
   const [mapFailed, setMapFailed] = useState(false);
   const businessDate = getLocalDateString(currentTime);
   const operation = useRef<AbortController | null>(null);
+  const locationWarmup = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const nativeCameraOpen = useRef(false);
   const isSubmittingRef = useRef(false);
   const readGeneration = useRef(0);
   const { capturePhoto, getLocation, saveAttendance } = useClockIn();
   const { saveClockOut, resetAttendanceDev } = useClockOut();
+  useEffect(() => {
+    if (!authUser?.id || Capacitor.isNativePlatform() || document.hidden) return;
+    const controller = new AbortController();
+    locationWarmup.current = controller;
+    const hidden = () => { if (document.hidden) controller.abort(); };
+    document.addEventListener('visibilitychange', hidden);
+    // Warm the browser provider after login; attendance still obtains its own fresh fix.
+    void getLocation(controller.signal).catch(() => {}).finally(() => {
+      if (locationWarmup.current === controller) locationWarmup.current = null;
+    });
+    return () => { controller.abort(); document.removeEventListener('visibilitychange', hidden); };
+  }, [authUser?.id, getLocation]);
   const updatePhotoUrl = setPhotoUrl;
   useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
 
@@ -142,6 +155,7 @@ export default function EmployeeHome() {
 
   const begin = () => {
     if (operation.current || isSubmittingRef.current) return null;
+    locationWarmup.current?.abort();
     const controller = new AbortController();
     operation.current = controller;
     setLoading(true);
@@ -310,10 +324,10 @@ export default function EmployeeHome() {
             </div>
             <div>
               <p className="font-medium text-sm">
-                {coords ? (inArea ? `Dalam Area ${targetBranch.name} (${Math.round(distance!)}m)` : nearestEval.message) : 'Menghitung...'}
+                {coords ? (inArea ? `Dalam Area ${targetBranch.name} (${Math.round(distance!)}m)` : nearestEval.message) : loading ? 'Mengambil lokasi presisi...' : 'Lokasi belum terverifikasi'}
               </p>
               <p className="text-xs text-muted-foreground">
-                {inArea ? `Lokasi terverifikasi di area ${targetBranch.name}.` : `Batas maksimum dari ${targetBranch.name} adalah ${targetBranch.radius}m.`}
+                {!coords ? `Izinkan lokasi presisi. Akurasi maksimal ±${LOCATION_POLICY.maxAccuracy} m.` : inArea ? `Lokasi terverifikasi di area ${targetBranch.name}.` : `Batas maksimum dari ${targetBranch.name} adalah ${targetBranch.radius}m.`}
               </p>
             </div>
           </div>
